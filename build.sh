@@ -5,9 +5,6 @@ CFLAGS="-Isrc -Wall -pedantic -Wextra -Werror -Wno-unused-function -Wno-unused-p
 # CFLAGS="-Isrc -O3"
 LDFLAGS="-ldl -lm"
 
-echo "CC jule"
-gcc -o jule src/jule_driver.c ${CFLAGS} ${LDFLAGS} || exit $?
-
 echo "CC julie"
 gcc -o julie src/driver.c ${CFLAGS} ${LDFLAGS} || exit $?
 
