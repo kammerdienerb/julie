@@ -14,12 +14,12 @@ Julie_Interp interp;
 static void on_julie_error(Julie_Error_Info *info);
 
 int main(int argc, char **argv) {
-    Julie_Status  status;
-    const char   *code;
-    int           code_size;
-    int           exe_path_length;
-    char         *exe_path;
-    char         *exe_dir;
+    Julie_Status        status;
+    const char         *code;
+    unsigned long long  code_size;
+    int                 exe_path_length;
+    char               *exe_path;
+    char               *exe_dir;
 
     if (argc < 2) {
         fprintf(stderr, "expected at least one argument: a julie file path\n");
@@ -35,7 +35,7 @@ int main(int argc, char **argv) {
     julie_init_interp(&interp);
     julie_set_error_callback(&interp, on_julie_error);
     julie_set_argv(&interp, argc - 1, argv + 1);
-    interp.cur_file = julie_get_string_id(&interp, argv[1]);
+/*     interp.cur_file = julie_get_string_id(&interp, argv[1]); */
 
 
     exe_path_length = wai_getExecutablePath(NULL, 0, NULL);
@@ -47,7 +47,7 @@ int main(int argc, char **argv) {
         exe_dir = dirname(exe_path);
         strcat(exe_dir, "/packages");
 
-        julie_add_package_directory(&interp, exe_dir);
+/*         julie_add_package_directory(&interp, exe_dir); */
         free(exe_path);
     }
 
@@ -64,7 +64,8 @@ static void on_julie_error(Julie_Error_Info *info) {
 
     status = info->status;
 
-    julie_free_error_info(info);
+    printf("there was an error\n");
+/*     julie_free_error_info(info); */
 
     exit(status);
 }
