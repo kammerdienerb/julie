@@ -1,18 +1,12 @@
-a = 1
-a
-&b = a
-&b = 2
-a
-&b
-&c = &b
-&c = 123
-a
+l = (list 1 (list 2 3))
+&p = (l 1)
+&p = 456
+&q = (l 1)
+&p = 789
 
 # my-list = (list 1 2 3)
-
 # &elem = (my-list 1)
 # &elem = 123
-
 # my-list = 0
 
 # println my-list
