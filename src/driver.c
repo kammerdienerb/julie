@@ -64,7 +64,7 @@ static void on_julie_error(Julie_Error_Info *info) {
 
     status = info->status;
 
-    printf("there was an error\n");
+    printf("%s\n", julie_error_string(status));
 /*     julie_free_error_info(info); */
 
     exit(status);
