@@ -1,13 +1,46 @@
-l = (list 1 (list 2 3))
-&p = (l 1)
-&p = 456
-&q = (l 1)
-&p = 789
+fn () (println "test")
 
 # my-list = (list 1 2 3)
-# &elem = (my-list 1)
-# &elem = 123
-# my-list = 0
+# &e = (my-list 1)
+# &e = 123
+# insert my-list (list 456 789) 1
+# &x = (my-list 1)
+
+# o =
+#     object
+#         "a" : 1
+#         "b" : 2
+
+# o <- ("c" : 123)
+
+# (typeof o) == "object"
+
+# sorted (list 4 9 1 56 4 456 "abc" "0")
+
+# keys o
+# values o
+
+# foreach key o
+#     key = 123
+
+# (o "b") += 121
+
+# &f = (o "b")
+
+# &f = (list 1 2 3)
+
+# &g = (&f 2)
+
+# l = (list 1 2 3)
+# foreach &a l
+#     &a = (2 * &a)
+#     println &a
+
+# l = (list 1 (list 2 3))
+# &p = (l 1)
+# &p = 456
+# &q = (l 1)
+# &p = 789
 
 # println my-list
 
@@ -21,6 +54,7 @@ l = (list 1 (list 2 3))
 
 # println
 #     x = ((0x0 + -1) & 0x000000fffffff00)
+
 # println &y
 # println
 #     x = (123 + 456)
@@ -29,6 +63,7 @@ l = (list 1 (list 2 3))
 # println
 #     typeof x
 
+# y = 0
 # println
 #     or
 #         not x
@@ -40,8 +75,6 @@ l = (list 1 (list 2 3))
 
 # println
 #     typeof +
-
-# l = (list 1 + 2)
 
 # if x
 #     printf "this is a value: %\n" l
