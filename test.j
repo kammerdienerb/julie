@@ -1,6 +1,43 @@
-fn () (println "test")
+# v = "captured"
 
-# my-list = (list 1 2 3)
+# l =
+#     lambda
+#         do
+#             &v = v
+#             &v = 789
+#             printf "v = %" &v
+
+
+# v = "not captured"
+
+# l
+
+# factorial =
+#     fn (n)
+#         select (n <= 2)
+#             n
+#             n * (factorial (n - 1))
+
+# factorial 5
+
+# foo = (fn (&y) "result of foo")
+
+# bar = (fn (&x) (&x = 456) "result of bar")
+
+# call =
+#     fn (&f &arg) (&f &arg)
+
+# change =
+#     fn (&f &g)
+#         &f = &g
+
+# change foo bar
+# zip = 123
+# call foo zip
+
+# append (list 1 2 3 4 5) 6
+
+# my-list = (list 1 2 3 4 5 6)
 # &e = (my-list 1)
 # &e = 123
 # insert my-list (list 456 789) 1
@@ -91,3 +128,14 @@ fn () (println "test")
 # while (apply compare)
 #     printf "ahhh\n"
 #     n += 1
+
+c =
+    fn ()
+        println
+            backtrace
+        foozle
+b =
+    fn () (c)
+a =
+    fn () (b)
+a
