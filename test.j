@@ -1,3 +1,6 @@
+println "a"
+println "b"
+
 # v = "captured"
 
 # l =
@@ -129,13 +132,12 @@
 #     printf "ahhh\n"
 #     n += 1
 
-c =
-    fn ()
-        println
-            backtrace
-        foozle
-b =
-    fn () (c)
-a =
-    fn () (b)
-a
+# c =
+#     fn ()
+#         println
+#             backtrace
+# b =
+#     fn () (c)
+# a =
+#     fn () (b)
+# a
