@@ -1020,7 +1020,8 @@ const char *julie_type_string(Julie_Type type) {
 }
 
 
-#define JULIE_MAX_RC_POT (55ull)
+// #define JULIE_MAX_RC_POT (55ull)
+#define JULIE_MAX_RC_POT (32ull)
 
 struct Julie_Value_Struct {
     union {
@@ -1033,11 +1034,17 @@ struct Julie_Value_Struct {
         Julie_Array        *list;
         Julie_Fn            builtin_fn;
     };
-    unsigned long long      type            : 4;                //  4
-    unsigned long long      interned_string : 1;                //  5
-    unsigned long long      builtin         : 1;                //  6
-    unsigned long long      infix           : 1;                //  7
-    unsigned long long      rc              : JULIE_MAX_RC_POT; // 64
+//     unsigned long long      type            : 4;                //  4
+//     unsigned long long      interned_string : 1;                //  5
+//     unsigned long long      builtin         : 1;                //  6
+//     unsigned long long      infix           : 1;                //  7
+//     unsigned long long      rc              : JULIE_MAX_RC_POT; // 64
+
+    unsigned int rc;
+    unsigned char      type;
+    unsigned char      interned_string;
+    unsigned char      builtin;
+    unsigned char infix;
 };
 
 typedef Julie_Value *Julie_Value_Ptr;
@@ -7411,6 +7418,8 @@ Julie_Status julie_interp(Julie_Interp *interp) {
     status = JULIE_SUCCESS;
 
     ARRAY_FOR_EACH(interp->roots, root) {
+        julie_ref(root);
+
 //         printf("\033[36m");
 //         julie_println(interp, root, 0);
 //         printf("\033[0m");
@@ -7429,6 +7438,7 @@ Julie_Status julie_interp(Julie_Interp *interp) {
 //         printf("\033[33m");
 //         julie_print_symtab(interp);
 //         printf("\033[0m");
+        julie_set_rc(root, 0);
     }
 
 out:;
@@ -7447,7 +7457,7 @@ void julie_free(Julie_Interp *interp) {
 
 
     ARRAY_FOR_EACH(interp->roots, it) {
-        julie_free_value(interp, it);
+        julie_force_free_value(interp, it);
     }
     julie_array_free(interp->roots);
 

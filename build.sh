@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-ASAN="-fsanitize=address"
-CFLAGS="-Isrc -Wall -pedantic -Wextra -Werror -Wno-unused-function -Wno-unused-parameter -g -O0 ${ASAN}"
-# CFLAGS="-Isrc -O3 -g"
+# ASAN="-fsanitize=address"
+# CFLAGS="-Isrc -Wall -pedantic -Wextra -Werror -Wno-unused-function -Wno-unused-parameter -g -O0 ${ASAN}"
+CFLAGS="-Isrc -O3 -gdwarf-4 -DJULIE_ASSERTIONS=0"
 LDFLAGS="-ldl -lm"
 
 echo "CC julie"
