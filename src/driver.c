@@ -157,23 +157,22 @@ static void on_julie_error(Julie_Error_Info *info) {
 
     fprintf(stderr, "%s\n", reset);
 
-    if (julie_array_len(info->interp->backtrace) > 0) {
-        fprintf(stderr, "%sbacktrace:%s\n", blue, reset);
-        for (i = julie_array_len(info->interp->backtrace); i > 0; i -= 1) {
-            it = julie_array_elem(info->interp->backtrace, i - 1);
+    for (i = info->interp->apply_depth; i > 0; i -= 1) {
+        if (i == info->interp->apply_depth) { continue; }
 
-            s = julie_to_string(info->interp, it->fn, 0);
-            fprintf(stderr, "    %s%s:%llu:%llu%s %s%s%s\n",
-                    blue,
-                    it->file_id == NULL ? "<?>" : julie_get_cstring(info->interp, it->file_id),
-                    it->line,
-                    it->col,
-                    reset,
-                    cyan,
-                    s,
-                    reset);
-            JULIE_FREE(s);
-        }
+        it = &(((Julie_Apply_Context*)julie_array_elem(info->interp->apply_contexts, i - 1))->bt_entry);
+
+        s = julie_to_string(info->interp, it->fn, 0);
+        fprintf(stderr, "    %s%s:%llu:%llu%s %s%s%s\n",
+                blue,
+                it->file_id == NULL ? "<?>" : julie_get_cstring(info->interp, it->file_id),
+                it->line,
+                it->col,
+                reset,
+                cyan,
+                s,
+                reset);
+        JULIE_FREE(s);
     }
 
     julie_free_error_info(info);
