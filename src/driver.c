@@ -45,9 +45,9 @@ int main(int argc, char **argv) {
         exe_path[exe_path_length] = 0;
 
         exe_dir = dirname(exe_path);
-        strcat(exe_dir, "/packages");
+/*         strcat(exe_dir, "/packages"); */
 
-/*         julie_add_package_directory(&interp, exe_dir); */
+        julie_add_package_directory(&interp, exe_dir);
         free(exe_path);
     }
 
@@ -82,7 +82,7 @@ static void on_julie_error(Julie_Error_Info *info) {
 
     fprintf(stderr, "%s%s:%llu:%llu:%s %serror: %s",
             blue,
-            info->file_id == NULL ? "<?>" : julie_get_cstring(info->interp, info->file_id),
+            info->file_id == NULL ? "<?>" : julie_get_cstring(info->file_id),
             info->line,
             info->col,
             reset,
@@ -140,13 +140,9 @@ static void on_julie_error(Julie_Error_Info *info) {
             JULIE_FREE(s);
             break;
         case JULIE_ERR_FILE_NOT_FOUND:
-            fprintf(stderr, " (%s)", info->file_not_found.path);
-            break;
         case JULIE_ERR_FILE_IS_DIR:
-            fprintf(stderr, " (%s)", info->file_is_dir.path);
-            break;
         case JULIE_ERR_MMAP_FAILED:
-            fprintf(stderr, " (%s)", info->mmap_failed.path);
+            fprintf(stderr, " (%s)", info->file.path);
             break;
         case JULIE_ERR_LOAD_PACKAGE_FAILURE:
             fprintf(stderr, " (%s) %s", info->load_package_failure.path, info->load_package_failure.package_error_message);
@@ -165,7 +161,7 @@ static void on_julie_error(Julie_Error_Info *info) {
         s = julie_to_string(info->interp, it->fn, 0);
         fprintf(stderr, "    %s%s:%llu:%llu%s %s%s%s\n",
                 blue,
-                it->file_id == NULL ? "<?>" : julie_get_cstring(info->interp, it->file_id),
+                it->file_id == NULL ? "<?>" : julie_get_cstring(it->file_id),
                 it->line,
                 it->col,
                 reset,
