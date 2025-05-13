@@ -1,15 +1,14 @@
-#include <julie.h>
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <signal.h>
 #include <termios.h>
+#include <sys/ioctl.h>
 
-
-static struct termios save_term;
-
+#define JULIE_IMPL
+#include "julie.h"
 
 #define TERM_BLACK                   "\033[0;30m"
 #define TERM_BLUE                    "\033[0;34m"
@@ -162,8 +161,248 @@ enum {
     | (((c) & 0xfff) << 0)) \
     | 0x80000000)
 
+#define G_IS_ASCII(g) (!((g).u_c >> 7))
 
-int s_to_i(const char *s) {
+#define G(c) ((yed_glyph){ .data = (c)})
+
+static const unsigned char _utf8_lens[] = {
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 4, 1
+};
+
+#define glyph_len(g)                          \
+    (likely(G_IS_ASCII(g))                    \
+        ? 1                                   \
+        : (int)(_utf8_lens[(g).u_c >> 3ULL]))
+
+typedef union {
+    char          c;
+    unsigned char u_c;
+    unsigned      data;
+    unsigned char bytes[4];
+} Glyph;
+
+typedef struct {
+    int      bg_set;
+    unsigned bg;
+    int      fg_set;
+    unsigned fg;
+    Glyph    glyph;
+    int      dirty;
+} Screen_Cell;
+
+typedef struct {
+    int          cur_bg_set;
+    unsigned     cur_bg;
+    int          cur_fg_set;
+    unsigned     cur_fg;
+    int          cur_row;
+    int          cur_col;
+    Screen_Cell *cells;
+} Screen;
+
+
+
+
+static Julie_Interp    interp;
+static struct termios  save_term;
+static int             term_set;
+static int             term_height;
+static int             term_width;
+static int             term_resized;
+static Screen          screen1;
+static Screen          screen2;
+static Screen         *update_screen = &screen1;
+static Screen         *render_screen = &screen2;
+
+
+static void on_julie_error(Julie_Error_Info *info);
+static void set_term(void);
+static void restore_term(void);
+static int  read_keys(int *input);
+static void resize_term(void);
+static void resize_event(void);
+static void mouse_event(int key);
+static void key_event(int key);
+
+static Julie_Status j_term_clear(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result);
+static Julie_Status j_term_flush(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result);
+static Julie_Status j_term_set_cell_bg(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result);
+static Julie_Status j_term_set_cell_fg(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result);
+
+#undef JULIE_BIND_FN
+#define JULIE_BIND_FN(_name, _fn) julie_bind_fn(&interp, julie_get_string_id(&interp, (_name)), (_fn))
+
+int main(int argc, char **argv) {
+    Julie_Status        status;
+    const char         *code;
+    unsigned long long  code_size;
+    int                 n;
+    int                 input[32];
+    int                 i;
+
+    if ((status = julie_map_file_into_readonly_memory("term.j", &code, &code_size))) {
+        fprintf(stderr, "error opening '%s': %s\n", "term.j", julie_error_string(status));
+        return 1;
+    }
+
+    julie_init_interp(&interp);
+    julie_set_error_callback(&interp, on_julie_error);
+
+    JULIE_BIND_FN("@term:clear",       j_term_clear);
+    JULIE_BIND_FN("@term:flush",       j_term_clear);
+    JULIE_BIND_FN("@term:set-cell-bg", j_term_clear);
+    JULIE_BIND_FN("@term:set-cell-fg", j_term_clear);
+
+    interp.cur_file_id = julie_get_string_id(&interp, "term.j");
+    julie_parse(&interp, code, strlen(code));
+
+    set_term();
+    julie_interp(&interp);
+
+    for (;;) {
+        if (term_resized) {
+            resize_term();
+            resize_event();
+        }
+
+        n = read_keys(input);
+        for (i = 0; i < n; i += 1) {
+            if (IS_MOUSE(input[0])) {
+                mouse_event(input[0]);
+            } else {
+                key_event(input[0]);
+            }
+        }
+    }
+
+    julie_free(&interp);
+    restore_term();
+
+    return 0;
+}
+
+static void on_julie_error(Julie_Error_Info *info) {
+    Julie_Status           status;
+    const char           *blue;
+    const char           *red;
+    const char           *cyan;
+    const char           *reset;
+    char                 *s;
+    unsigned              i;
+    Julie_Backtrace_Entry *it;
+
+    restore_term();
+
+    status = info->status;
+
+    if (isatty(2)) {
+        blue  = "\033[34m";
+        red   = "\033[31m";
+        cyan  = "\033[36m";
+        reset = "\033[0m";
+    } else {
+        blue = red = cyan = reset = "";
+    }
+
+    fprintf(stderr, "%s%s:%llu:%llu:%s %serror: %s",
+            blue,
+            info->file_id == NULL ? "<?>" : julie_get_cstring(info->file_id),
+            info->line,
+            info->col,
+            reset,
+            red,
+            julie_error_string(status));
+
+    switch (status) {
+        case JULIE_ERR_LOOKUP:
+            if (info->lookup.sym != NULL) {
+                fprintf(stderr, " (%s)", info->lookup.sym);
+            }
+            break;
+        case JULIE_ERR_RELEASE_WHILE_BORROWED:
+            if (info->release_while_borrowed.sym != NULL) {
+                fprintf(stderr, " (%s)", info->release_while_borrowed.sym);
+            }
+            break;
+        case JULIE_ERR_REF_OF_TRANSIENT:
+            if (info->ref_of_transient.sym != NULL) {
+                fprintf(stderr, " (%s)", info->ref_of_transient.sym);
+            }
+            break;
+        case JULIE_ERR_REF_OF_OBJECT_KEY:
+            if (info->ref_of_object_key.sym != NULL) {
+                fprintf(stderr, " (%s)", info->ref_of_object_key.sym);
+            }
+            break;
+        case JULIE_ERR_NOT_LVAL:
+            if (info->not_lval.sym != NULL) {
+                fprintf(stderr, " (%s)", info->not_lval.sym);
+            }
+            break;
+        case JULIE_ERR_MODIFY_WHILE_ITER:
+            if (info->modify_while_iter.sym != NULL) {
+                fprintf(stderr, " (%s)", info->modify_while_iter.sym);
+            }
+            break;
+        case JULIE_ERR_ARITY:
+            fprintf(stderr, " (wanted %s%llu, got %llu)",
+                    info->arity.at_least ? "at least " : "",
+                    info->arity.wanted_arity,
+                    info->arity.got_arity);
+            break;
+        case JULIE_ERR_TYPE:
+            fprintf(stderr, " (wanted %s, got %s)",
+                    julie_type_string(info->type.wanted_type),
+                    julie_type_string(info->type.got_type));
+            break;
+        case JULIE_ERR_BAD_APPLY:
+            fprintf(stderr, " (got %s)", julie_type_string(info->bad_application.got_type));
+            break;
+        case JULIE_ERR_BAD_INDEX:
+            s = julie_to_string(info->interp, info->bad_index.bad_index, 0);
+            fprintf(stderr, " (index: %s)", s);
+            JULIE_FREE(s);
+            break;
+        case JULIE_ERR_FILE_NOT_FOUND:
+        case JULIE_ERR_FILE_IS_DIR:
+        case JULIE_ERR_MMAP_FAILED:
+            fprintf(stderr, " (%s)", info->file.path);
+            break;
+        case JULIE_ERR_LOAD_PACKAGE_FAILURE:
+            fprintf(stderr, " (%s) %s", info->load_package_failure.path, info->load_package_failure.package_error_message);
+            break;
+        default:
+            break;
+    }
+
+    fprintf(stderr, "%s\n", reset);
+
+    for (i = info->interp->apply_depth; i > 0; i -= 1) {
+        if (i == info->interp->apply_depth) { continue; }
+
+        it = &(((Julie_Apply_Context*)julie_array_elem(info->interp->apply_contexts, i - 1))->bt_entry);
+
+        s = julie_to_string(info->interp, it->fn, 0);
+        fprintf(stderr, "    %s%s:%llu:%llu%s %s%s%s\n",
+                blue,
+                it->file_id == NULL ? "<?>" : julie_get_cstring(it->file_id),
+                it->line,
+                it->col,
+                reset,
+                cyan,
+                s,
+                reset);
+        JULIE_FREE(s);
+    }
+
+    julie_free_error_info(info);
+
+    exit(status);
+}
+
+
+static inline int s_to_i(const char *s) {
     int i;
 
     sscanf(s, "%d", &i);
@@ -443,6 +682,32 @@ static int esc_sequence(int *input) {
     return 3;
 }
 
+static int read_keys(int *input) {
+    int  len;
+    int  nread;
+    char c;
+
+    len = 0;
+
+    nread = read(0, &c, 1);
+    if (nread <= 0) { return 0; }
+
+    if (c == ESC) {
+        input[0] = c;
+
+        len = esc_timeout(input);
+
+        if (len == 3) {
+            len = esc_sequence(input);
+        }
+    } else if (c > 0) {
+        input[0] = c;
+        len      = 1;
+    }
+
+    return len;
+}
+
 char *key_to_string(int key) {
     char key_buff[16];
 
@@ -574,20 +839,144 @@ char *key_to_string(int key) {
     return strdup(key_buff);
 }
 
-Julie_Status term_init(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result) {
-    Julie_Status   status;
-    struct termios raw_term;
+static void resize_event(void) {
+    Julie_Value *fn;
+    Julie_Value *list;
+    Julie_Value *result;
 
-    status = JULIE_SUCCESS;
+    fn = julie_lookup(&interp, julie_get_string_id(&interp, "@on-resize"));
+    if (fn == NULL) { return; }
 
-    (void)values;
-    if (n_values != 0) {
-        status = JULIE_ERR_ARITY;
-        julie_make_arity_error(interp, expr, 0, n_values, 0);
-        *result = NULL;
-        goto out;
+    list = julie_list_value(&interp);
+    JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "@on-resize")));
+    JULIE_ARRAY_PUSH(list->list, julie_sint_value(&interp, term_height));
+    JULIE_ARRAY_PUSH(list->list, julie_sint_value(&interp, term_width));
+
+    julie_eval(&interp, list, &result);
+    if (result != NULL) {
+        julie_free_value(&interp, result);
+    }
+    julie_free_value(&interp, list);
+}
+
+static void resize_term(void) {
+    int          n_cells;
+    int          n_bytes;
+    Screen_Cell *cell;
+    int          i;
+
+    n_cells = term_height * term_width;
+    n_bytes = n_cells * sizeof(Screen_Cell);
+
+    update_screen->cells = realloc(update_screen->cells, n_bytes);
+    render_screen->cells = realloc(render_screen->cells, n_bytes);
+
+    memset(update_screen->cells, 0, n_bytes);
+    memset(render_screen->cells, 0, n_bytes);
+
+    cell = render_screen->cells;
+    for (i = 0; i < n_cells; i += 1) {
+        cell->dirty  = 1;
+        cell        += 1;
     }
 
+    term_resized = 0;
+}
+
+static void mouse_event(int mouse) {
+    Julie_Value *fn;
+    Julie_Value *list;
+    Julie_Value *result;
+
+    fn = julie_lookup(&interp, julie_get_string_id(&interp, "@on-mouse"));
+    if (fn == NULL) { return; }
+
+    list = julie_list_value(&interp);
+    JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "@on-mouse")));
+    JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'mouse")));
+    if (MOUSE_KIND(mouse) == MOUSE_PRESS) {
+        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'down")));
+    } else if (MOUSE_KIND(mouse) == MOUSE_RELEASE) {
+        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'up")));
+    } else if (MOUSE_KIND(mouse) == MOUSE_DRAG) {
+        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'drag")));
+    } else if (MOUSE_KIND(mouse) == MOUSE_OVER) {
+        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'over")));
+    } else {
+        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'???")));
+    }
+    if (MOUSE_BUTTON(mouse) == MOUSE_BUTTON_LEFT) {
+        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'left")));
+    } else if (MOUSE_BUTTON(mouse) == MOUSE_BUTTON_MIDDLE) {
+        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'middle")));
+    } else if (MOUSE_BUTTON(mouse) == MOUSE_BUTTON_RIGHT) {
+        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'right")));
+    } else {
+        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'???")));
+    }
+    JULIE_ARRAY_PUSH(list->list, julie_sint_value(&interp, MOUSE_ROW(mouse)));
+    JULIE_ARRAY_PUSH(list->list, julie_sint_value(&interp, MOUSE_COL(mouse)));
+
+    julie_eval(&interp, list, &result);
+    if (result != NULL) {
+        julie_free_value(&interp, result);
+    }
+    julie_free_value(&interp, list);
+}
+
+static void key_event(int code) {
+    Julie_Value *fn;
+    char        *str;
+    Julie_Value *list;
+    Julie_Value *result;
+
+    fn = julie_lookup(&interp, julie_get_string_id(&interp, "@on-key"));
+    if (fn == NULL) { return; }
+
+    str = key_to_string(code);
+    if (str == NULL) { return; }
+
+    list = julie_list_value(&interp);
+    JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "@on-key")));
+    JULIE_ARRAY_PUSH(list->list, julie_string_value(&interp, str));
+
+    free(str);
+
+    julie_eval(&interp, list, &result);
+    if (result != NULL) {
+        julie_free_value(&interp, result);
+    }
+    julie_free_value(&interp, list);
+}
+
+static void sig_handler(int sig) {
+    struct sigaction act;
+
+    act.sa_handler = SIG_DFL;
+    act.sa_flags = 0;
+    sigemptyset (&act.sa_mask);
+    sigaction(sig, &act, NULL);
+
+    /* Exit the terminal. */
+    restore_term();
+
+    /* Do the real signal. */
+    kill(0, sig);
+}
+
+static void winch_handler(int sig) {
+    struct winsize ws;
+
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != -1 && ws.ws_col > 0) {
+        term_width   = ws.ws_col;
+        term_height  = ws.ws_row;
+        term_resized = 1;
+    }
+}
+
+static void set_term(void) {
+    struct termios   raw_term;
+    struct sigaction sa;
 
     tcgetattr(0, &save_term);
     raw_term = save_term;
@@ -598,9 +987,8 @@ Julie_Status term_init(Julie_Interp *interp, Julie_Value *expr, unsigned n_value
     /* raw_term.c_oflag &= ~(OPOST); */
     /* control modes - set 8 bit chars */
     raw_term.c_cflag |= (CS8);
-    /* local modes - choing off, canonical off, no extended functions,
-     *      * no signal chars (^Z,^C) */
-    raw_term.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+    /* local modes - choing off, canonical off, no extended functions */
+    raw_term.c_lflag &= ~(ECHO | ICANON | IEXTEN);
 
 
     /* control chars - set return condition: min number of bytes and timer. */
@@ -614,7 +1002,24 @@ Julie_Status term_init(Julie_Interp *interp, Julie_Value *expr, unsigned n_value
 
     setvbuf(stdout, NULL, _IONBF, 0);
 
-/*     yed_register_sigwinch_handler(); */
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags   = 0;
+    sa.sa_handler = sig_handler;
+
+    sigaction(SIGINT,  &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+    sigaction(SIGTSTP, &sa, NULL);
+    sigaction(SIGQUIT, &sa, NULL);
+    sigaction(SIGSEGV, &sa, NULL);
+    sigaction(SIGABRT, &sa, NULL);
+    sigaction(SIGILL,  &sa, NULL);
+    sigaction(SIGFPE,  &sa, NULL);
+    sigaction(SIGBUS,  &sa, NULL);
+
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags   = 0;
+    sa.sa_handler = winch_handler;
+    sigaction(SIGWINCH,  &sa, NULL);
 
     printf(TERM_ALT_SCREEN);
     printf(TERM_MOUSE_BUTTON_ENABLE);
@@ -625,25 +1030,11 @@ Julie_Status term_init(Julie_Interp *interp, Julie_Value *expr, unsigned n_value
 
     fflush(stdout);
 
-
-    *result = julie_nil_value(interp);
-
-out:;
-    return status;
+    term_set = 1;
 }
 
-Julie_Status term_fini(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result) {
-    Julie_Status status;
-
-    status = JULIE_SUCCESS;
-
-    (void)values;
-    if (n_values != 0) {
-        status = JULIE_ERR_ARITY;
-        julie_make_arity_error(interp, expr, 0, n_values, 0);
-        *result = NULL;
-        goto out;
-    }
+static void restore_term(void) {
+    if (!term_set) { return; }
 
 /*     printf(TERM_MOUSE_ANY_DISABLE); */
     printf(TERM_SGR_1006_DISABLE);
@@ -654,14 +1045,135 @@ Julie_Status term_fini(Julie_Interp *interp, Julie_Value *expr, unsigned n_value
     fflush(stdout);
 
     tcsetattr(0, TCSAFLUSH, &save_term);
-
-    *result = julie_nil_value(interp);
-
-out:;
-    return status;
 }
 
-Julie_Status term_clear(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result) {
+static void set_cell_bg(unsigned row, unsigned col, unsigned color) {
+    unsigned     idx;
+    Screen_Cell *cell;
+
+    if (row == 0 || col == 0) { return; }
+
+    idx = ((row - 1) * term_width) + (col - 1);
+
+    cell         = &(update_screen->cells[idx]);
+    cell->bg     = color;
+    cell->bg_set = 1;
+}
+
+static void set_cell_fg(unsigned row, unsigned col, unsigned color) {
+    unsigned     idx;
+    Screen_Cell *cell;
+
+    if (row == 0 || col == 0) { return; }
+
+    idx = ((row - 1) * term_width) + (col - 1);
+
+    cell         = &(update_screen->cells[idx]);
+    cell->fg     = color;
+    cell->fg_set = 1;
+}
+
+static void diff_and_swap_screens(void) {
+    int          n_cells;
+    Screen_Cell *ucell;
+    Screen_Cell *rcell;
+    int          i;
+    int          dirty;
+
+    n_cells = term_height * term_width;
+    ucell   = update_screen->cells;
+    rcell   = render_screen->cells;
+
+    for (i = 0; i < n_cells; i += 1) {
+        dirty =    (rcell->glyph.data != ucell->glyph.data)
+                || (rcell->bg_set     != ucell->bg_set)
+                || (rcell->bg         != ucell->bg)
+                || (rcell->fg_set     != ucell->fg_set)
+                || (rcell->fg         != ucell->fg);
+
+        *rcell       = *ucell;
+        rcell->dirty = dirty;
+
+        ucell += 1;
+        rcell += 1;
+    }
+}
+
+void flush_screen(void) {
+    Screen_Cell *cell;
+    int          row;
+    int          col;
+
+    printf("\033[?2026h");
+
+    printf(TERM_CURSOR_HOME);
+    render_screen->cur_col = render_screen->cur_row = 1;
+
+    render_screen->cur_bg_set = 0;
+    render_screen->cur_bg     = 0;
+    render_screen->cur_fg_set = 0;
+    render_screen->cur_fg     = 0;
+    printf(TERM_RESET);
+
+    cell = render_screen->cells;
+
+    for (row = 1; row <= term_height; row += 1) {
+        for (col = 1; col <= term_width; col += 1) {
+            if (cell->dirty && cell->glyph.data) {
+                if (render_screen->cur_row != row
+                &&  render_screen->cur_col != col) {
+                    printf("\033[%d;%dH", row, col);
+                    render_screen->cur_row = row;
+                    render_screen->cur_col = col;
+                } else if (render_screen->cur_row != row) {
+                    printf("\033[%dd", row);
+                    render_screen->cur_row = row;
+                } else if (render_screen->cur_col != col) {
+                    printf("\033[%dG", col);
+                    render_screen->cur_col = col;
+                }
+
+                if ((cell->bg_set     != render_screen->cur_bg_set)
+                ||  (cell->bg         != render_screen->cur_bg)
+                ||  (cell->fg_set     != render_screen->cur_fg_set)
+                ||  (cell->fg         != render_screen->cur_fg)) {
+
+                    printf("\033[0m");
+
+                    if (cell->bg_set) {
+                        printf("\033[48;2;%d;%d;%dm",
+                            (cell->bg & 0xff0000) >> 16,
+                            (cell->bg & 0x00ff00) >> 8,
+                            cell->bg & 0x0000ff);
+                    }
+
+                    if (cell->fg_set) {
+                        printf("\033[38;2;%d;%d;%dm",
+                            (cell->bg & 0xff0000) >> 16,
+                            (cell->bg & 0x00ff00) >> 8,
+                            cell->bg & 0x0000ff);
+                    }
+
+                    render_screen->cur_bg     = cell->bg;
+                    render_screen->cur_bg_set = cell->bg_set;
+                    render_screen->cur_fg     = cell->fg;
+                    render_screen->cur_fg_set = cell->fg_set;
+                }
+
+                fwrite(&cell->glyph.c, 1, glyph_len(cell->glyph), stdout);
+
+                render_screen->cur_col += 1;
+            }
+
+            cell->dirty = 0;
+            cell += 1;
+        }
+    }
+
+    printf("\033[?2026l");
+}
+
+static Julie_Status j_term_clear(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result) {
     Julie_Status status;
 
     status = JULIE_SUCCESS;
@@ -674,8 +1186,8 @@ Julie_Status term_clear(Julie_Interp *interp, Julie_Value *expr, unsigned n_valu
         goto out;
     }
 
-
-    printf(TERM_CLEAR_SCREEN TERM_CURSOR_HOME);
+    printf(TERM_RESET TERM_CURSOR_HOME TERM_CLEAR_SCREEN);
+    resize_term();
 
     *result = julie_nil_value(interp);
 
@@ -683,7 +1195,7 @@ out:;
     return status;
 }
 
-Julie_Status term_flush(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result) {
+static Julie_Status j_term_flush(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result) {
     Julie_Status status;
 
     status = JULIE_SUCCESS;
@@ -696,7 +1208,7 @@ Julie_Status term_flush(Julie_Interp *interp, Julie_Value *expr, unsigned n_valu
         goto out;
     }
 
-
+    flush_screen();
 
     *result = julie_nil_value(interp);
 
@@ -704,129 +1216,140 @@ out:;
     return status;
 }
 
-Julie_Status term_get_event(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result) {
+static Julie_Status j_term_set_cell_bg(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result) {
     Julie_Status  status;
-    int           n;
-    char          c;
-    int           input[16];
-    int           len;
-    Julie_Value  *key;
-    Julie_Value  *val;
-    char         *str;
+    Julie_Value  *row;
+    Julie_Value  *col;
+    Julie_Value  *color;
 
     status = JULIE_SUCCESS;
 
-    *result = NULL;
-
-    (void)values;
-    if (n_values != 0) {
+    if (n_values != 3) {
         status = JULIE_ERR_ARITY;
-        julie_make_arity_error(interp, expr, 0, n_values, 0);
+        julie_make_arity_error(interp, expr, 3, n_values, 0);
         *result = NULL;
         goto out;
     }
 
-    n = read(0, &c, 1);
-    if (n <= 0) { goto out_no_event; }
-
-    input[0] = c;
-
-    if (c == ESC) {
-        len = esc_timeout(input);
-
-        if (len == 3) {
-            len = esc_sequence(input);
-        }
+    status = julie_eval(interp, values[0], &row);
+    if (status != JULIE_SUCCESS) {
+        *result = NULL;
+        goto out;
     }
 
-
-    if (IS_MOUSE(input[0])) {
-        *result = julie_object_value(interp);
-
-        key = julie_symbol_value(interp, julie_get_string_id(interp, "'type"));
-        val = julie_symbol_value(interp, julie_get_string_id(interp, "'mouse"));
-        julie_object_insert_field(interp, *result, key, val);
-        julie_free_value(interp, key);
-        julie_free_value(interp, val);
-
-        key = julie_symbol_value(interp, julie_get_string_id(interp, "'action"));
-        if (MOUSE_KIND(input[0]) == MOUSE_PRESS) {
-            val = julie_symbol_value(interp, julie_get_string_id(interp, "'down"));
-        } else if (MOUSE_KIND(input[0]) == MOUSE_RELEASE) {
-            val = julie_symbol_value(interp, julie_get_string_id(interp, "'up"));
-        } else if (MOUSE_KIND(input[0]) == MOUSE_DRAG) {
-            val = julie_symbol_value(interp, julie_get_string_id(interp, "'drag"));
-        } else if (MOUSE_KIND(input[0]) == MOUSE_OVER) {
-            val = julie_symbol_value(interp, julie_get_string_id(interp, "'over"));
-        } else {
-            val = julie_symbol_value(interp, julie_get_string_id(interp, "???"));
-        }
-        julie_object_insert_field(interp, *result, key, val);
-        julie_free_value(interp, key);
-        julie_free_value(interp, val);
-
-        key = julie_symbol_value(interp, julie_get_string_id(interp, "'button"));
-        if (MOUSE_BUTTON(input[0]) == MOUSE_BUTTON_LEFT) {
-            val = julie_symbol_value(interp, julie_get_string_id(interp, "'left"));
-        } else if (MOUSE_BUTTON(input[0]) == MOUSE_BUTTON_MIDDLE) {
-            val = julie_symbol_value(interp, julie_get_string_id(interp, "'middle"));
-        } else if (MOUSE_BUTTON(input[0]) == MOUSE_BUTTON_RIGHT) {
-            val = julie_symbol_value(interp, julie_get_string_id(interp, "'right"));
-        } else {
-            val = julie_symbol_value(interp, julie_get_string_id(interp, "???"));
-        }
-        julie_object_insert_field(interp, *result, key, val);
-        julie_free_value(interp, key);
-        julie_free_value(interp, val);
-
-        key = julie_symbol_value(interp, julie_get_string_id(interp, "'row"));
-        val = julie_sint_value(interp, MOUSE_ROW(input[0]));
-        julie_object_insert_field(interp, *result, key, val);
-        julie_free_value(interp, key);
-        julie_free_value(interp, val);
-
-        key = julie_symbol_value(interp, julie_get_string_id(interp, "'col"));
-        val = julie_sint_value(interp, MOUSE_COL(input[0]));
-        julie_object_insert_field(interp, *result, key, val);
-        julie_free_value(interp, key);
-        julie_free_value(interp, val);
-    } else {
-        str = key_to_string(input[0]);
-        if (str == NULL) { goto out_no_event; }
-
-        *result = julie_object_value(interp);
-
-        key = julie_symbol_value(interp, julie_get_string_id(interp, "'type"));
-        val = julie_symbol_value(interp, julie_get_string_id(interp, "'key"));
-        julie_object_insert_field(interp, *result, key, val);
-        julie_free_value(interp, key);
-        julie_free_value(interp, val);
-        key = julie_symbol_value(interp, julie_get_string_id(interp, "'key"));
-        val = julie_string_value(interp, str);
-        julie_object_insert_field(interp, *result, key, val);
-        julie_free_value(interp, key);
-        julie_free_value(interp, val);
-        free(str);
+    if (!JULIE_TYPE_IS_INTEGER(row->type)) {
+        *result = NULL;
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[0], _JULIE_INTEGER, row->type);
+        goto out_free_row;
     }
 
-
-out_no_event:;
-    if (*result == NULL) {
-        *result = julie_nil_value(interp);
+    status = julie_eval(interp, values[1], &col);
+    if (status != JULIE_SUCCESS) {
+        *result = NULL;
+        goto out_free_row;
     }
+
+    if (!JULIE_TYPE_IS_INTEGER(col->type)) {
+        *result = NULL;
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[1], _JULIE_INTEGER, col->type);
+        goto out_free_col;
+    }
+
+    status = julie_eval(interp, values[2], &color);
+    if (status != JULIE_SUCCESS) {
+        *result = NULL;
+        goto out_free_col;
+    }
+
+    if (!JULIE_TYPE_IS_INTEGER(color->type)) {
+        *result = NULL;
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[2], _JULIE_INTEGER, color->type);
+        goto out_free_color;
+    }
+
+    set_cell_bg(row->uint, col->uint, color->uint);
+
+    *result = julie_nil_value(interp);
+
+out_free_color:;
+    julie_free_value(interp, color);
+out_free_col:;
+    julie_free_value(interp, col);
+out_free_row:;
+    julie_free_value(interp, row);
 
 out:;
     return status;
 }
 
-Julie_Value *julie_init_package(Julie_Interp *interp) {
-#define JULIE_BIND_FN(_name, _fn) julie_bind_fn(interp, julie_get_string_id(interp, (_name)), (_fn))
+static Julie_Status j_term_set_cell_fg(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result) {
+    Julie_Status  status;
+    Julie_Value  *row;
+    Julie_Value  *col;
+    Julie_Value  *color;
 
-    JULIE_BIND_FN("@term:init",      term_init);
-    JULIE_BIND_FN("@term:fini",      term_fini);
-    JULIE_BIND_FN("@term:clear",     term_clear);
-    JULIE_BIND_FN("@term:flush",     term_flush);
-    JULIE_BIND_FN("@term:get-event", term_get_event);
+    status = JULIE_SUCCESS;
 
-    return julie_string_value(interp, "term: draw in the terminal.");
+    if (n_values != 3) {
+        status = JULIE_ERR_ARITY;
+        julie_make_arity_error(interp, expr, 3, n_values, 0);
+        *result = NULL;
+        goto out;
+    }
+
+    status = julie_eval(interp, values[0], &row);
+    if (status != JULIE_SUCCESS) {
+        *result = NULL;
+        goto out;
+    }
+
+    if (!JULIE_TYPE_IS_INTEGER(row->type)) {
+        *result = NULL;
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[0], _JULIE_INTEGER, row->type);
+        goto out_free_row;
+    }
+
+    status = julie_eval(interp, values[1], &col);
+    if (status != JULIE_SUCCESS) {
+        *result = NULL;
+        goto out_free_row;
+    }
+
+    if (!JULIE_TYPE_IS_INTEGER(col->type)) {
+        *result = NULL;
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[1], _JULIE_INTEGER, col->type);
+        goto out_free_col;
+    }
+
+    status = julie_eval(interp, values[2], &color);
+    if (status != JULIE_SUCCESS) {
+        *result = NULL;
+        goto out_free_col;
+    }
+
+    if (!JULIE_TYPE_IS_INTEGER(color->type)) {
+        *result = NULL;
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[2], _JULIE_INTEGER, color->type);
+        goto out_free_color;
+    }
+
+    set_cell_fg(row->uint, col->uint, color->uint);
+
+    *result = julie_nil_value(interp);
+
+out_free_color:;
+    julie_free_value(interp, color);
+out_free_col:;
+    julie_free_value(interp, col);
+out_free_row:;
+    julie_free_value(interp, row);
+
+out:;
+    return status;
 }
