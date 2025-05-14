@@ -10,6 +10,8 @@
 #define JULIE_IMPL
 #include "julie.h"
 
+#include "term.j.h"
+
 #define TERM_BLACK                   "\033[0;30m"
 #define TERM_BLUE                    "\033[0;34m"
 #define TERM_GREEN                   "\033[0;32m"
@@ -161,9 +163,14 @@ enum {
     | (((c) & 0xfff) << 0)) \
     | 0x80000000)
 
-#define G_IS_ASCII(g) (!((g).u_c >> 7))
 
-#define G(c) ((yed_glyph){ .data = (c)})
+typedef union {
+    char          c;
+    unsigned char u_c;
+    unsigned char bytes[4];
+} Glyph;
+
+#define G_IS_ASCII(g) (!((g)->u_c >> 7))
 
 static const unsigned char _utf8_lens[] = {
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -173,14 +180,7 @@ static const unsigned char _utf8_lens[] = {
 #define glyph_len(g)                          \
     (likely(G_IS_ASCII(g))                    \
         ? 1                                   \
-        : (int)(_utf8_lens[(g).u_c >> 3ULL]))
-
-typedef union {
-    char          c;
-    unsigned char u_c;
-    unsigned      data;
-    unsigned char bytes[4];
-} Glyph;
+        : (int)(_utf8_lens[(g)->u_c >> 3ULL]))
 
 typedef struct {
     int      bg_set;
@@ -196,8 +196,8 @@ typedef struct {
     unsigned     cur_bg;
     int          cur_fg_set;
     unsigned     cur_fg;
-    int          cur_row;
-    int          cur_col;
+    unsigned     cur_row;
+    unsigned     cur_col;
     Screen_Cell *cells;
 } Screen;
 
@@ -207,8 +207,8 @@ typedef struct {
 static Julie_Interp    interp;
 static struct termios  save_term;
 static int             term_set;
-static int             term_height;
-static int             term_width;
+static unsigned        term_height;
+static unsigned        term_width;
 static int             term_resized;
 static Screen          screen1;
 static Screen          screen2;
@@ -225,40 +225,45 @@ static void resize_event(void);
 static void mouse_event(int key);
 static void key_event(int key);
 
+static Julie_Status j_term_exit(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result);
 static Julie_Status j_term_clear(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result);
 static Julie_Status j_term_flush(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result);
 static Julie_Status j_term_set_cell_bg(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result);
 static Julie_Status j_term_set_cell_fg(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result);
+static Julie_Status j_term_set_cell_char(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result);
 
 #undef JULIE_BIND_FN
 #define JULIE_BIND_FN(_name, _fn) julie_bind_fn(&interp, julie_get_string_id(&interp, (_name)), (_fn))
 
 int main(int argc, char **argv) {
-    Julie_Status        status;
-    const char         *code;
-    unsigned long long  code_size;
-    int                 n;
-    int                 input[32];
-    int                 i;
-
-    if ((status = julie_map_file_into_readonly_memory("term.j", &code, &code_size))) {
-        fprintf(stderr, "error opening '%s': %s\n", "term.j", julie_error_string(status));
-        return 1;
-    }
+    Julie_Status status;
+    int          n;
+    int          input[32];
+    int          i;
 
     julie_init_interp(&interp);
     julie_set_error_callback(&interp, on_julie_error);
 
-    JULIE_BIND_FN("@term:clear",       j_term_clear);
-    JULIE_BIND_FN("@term:flush",       j_term_clear);
-    JULIE_BIND_FN("@term:set-cell-bg", j_term_clear);
-    JULIE_BIND_FN("@term:set-cell-fg", j_term_clear);
+    JULIE_BIND_FN("@term:exit",          j_term_exit);
+    JULIE_BIND_FN("@term:clear",         j_term_clear);
+    JULIE_BIND_FN("@term:flush",         j_term_flush);
+    JULIE_BIND_FN("@term:set-cell-bg",   j_term_set_cell_bg);
+    JULIE_BIND_FN("@term:set-cell-fg",   j_term_set_cell_fg);
+    JULIE_BIND_FN("@term:set-cell-char", j_term_set_cell_char);
 
     interp.cur_file_id = julie_get_string_id(&interp, "term.j");
-    julie_parse(&interp, code, strlen(code));
+    julie_parse(&interp, (const char*)term_j, term_j_len);
 
     set_term();
-    julie_interp(&interp);
+
+    status = julie_interp(&interp);
+
+    if (status != JULIE_SUCCESS) {
+        restore_term();
+        return status;
+    }
+
+    resize_event();
 
     for (;;) {
         if (term_resized) {
@@ -859,11 +864,32 @@ static void resize_event(void) {
     julie_free_value(&interp, list);
 }
 
+static void clear_screen(Screen *screen) {
+    int n_cells;
+    int n_bytes;
+
+    n_cells = term_height * term_width;
+    n_bytes = n_cells * sizeof(Screen_Cell);
+
+    memset(screen->cells, 0, n_bytes);
+}
+
+static void get_term_size(void) {
+    struct winsize ws;
+
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != -1 && ws.ws_col > 0) {
+        term_width  = ws.ws_col;
+        term_height = ws.ws_row;
+    }
+}
+
 static void resize_term(void) {
     int          n_cells;
     int          n_bytes;
     Screen_Cell *cell;
     int          i;
+
+    get_term_size();
 
     n_cells = term_height * term_width;
     n_bytes = n_cells * sizeof(Screen_Cell);
@@ -871,8 +897,8 @@ static void resize_term(void) {
     update_screen->cells = realloc(update_screen->cells, n_bytes);
     render_screen->cells = realloc(render_screen->cells, n_bytes);
 
-    memset(update_screen->cells, 0, n_bytes);
-    memset(render_screen->cells, 0, n_bytes);
+    clear_screen(update_screen);
+    clear_screen(render_screen);
 
     cell = render_screen->cells;
     for (i = 0; i < n_cells; i += 1) {
@@ -881,6 +907,8 @@ static void resize_term(void) {
     }
 
     term_resized = 0;
+
+    printf(TERM_RESET TERM_CURSOR_HOME TERM_CLEAR_SCREEN);
 }
 
 static void mouse_event(int mouse) {
@@ -965,13 +993,7 @@ static void sig_handler(int sig) {
 }
 
 static void winch_handler(int sig) {
-    struct winsize ws;
-
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != -1 && ws.ws_col > 0) {
-        term_width   = ws.ws_col;
-        term_height  = ws.ws_row;
-        term_resized = 1;
-    }
+    term_resized = 1;
 }
 
 static void set_term(void) {
@@ -1026,9 +1048,12 @@ static void set_term(void) {
 /*     printf(TERM_MOUSE_ANY_ENABLE); */
     printf(TERM_SGR_1006_ENABLE);
     printf(TERM_CURSOR_HIDE);
-    printf(TERM_CURSOR_HOME);
+
+    printf(TERM_RESET TERM_CURSOR_HOME TERM_CLEAR_SCREEN);
 
     fflush(stdout);
+
+    resize_term();
 
     term_set = 1;
 }
@@ -1051,7 +1076,7 @@ static void set_cell_bg(unsigned row, unsigned col, unsigned color) {
     unsigned     idx;
     Screen_Cell *cell;
 
-    if (row == 0 || col == 0) { return; }
+    if (row == 0 || col == 0 || row > term_height || col > term_width) { return; }
 
     idx = ((row - 1) * term_width) + (col - 1);
 
@@ -1064,7 +1089,7 @@ static void set_cell_fg(unsigned row, unsigned col, unsigned color) {
     unsigned     idx;
     Screen_Cell *cell;
 
-    if (row == 0 || col == 0) { return; }
+    if (row == 0 || col == 0 || row > term_height || col > term_width) { return; }
 
     idx = ((row - 1) * term_width) + (col - 1);
 
@@ -1073,23 +1098,58 @@ static void set_cell_fg(unsigned row, unsigned col, unsigned color) {
     cell->fg_set = 1;
 }
 
+static void set_cell_glyph(unsigned row, unsigned col, const char *s) {
+    unsigned     idx;
+    Screen_Cell *cell;
+    Glyph       *g;
+
+    if (row == 0 || col == 0 || row > term_height || col > term_width) { return; }
+
+    idx = ((row - 1) * term_width) + (col - 1);
+
+    cell = &(update_screen->cells[idx]);
+
+    memset(cell->glyph.bytes, 0, sizeof(cell->glyph.bytes));
+    g = (Glyph*)s;
+    memcpy(cell->glyph.bytes, g->bytes, glyph_len(g));
+}
+
 static void diff_and_swap_screens(void) {
     int          n_cells;
     Screen_Cell *ucell;
     Screen_Cell *rcell;
     int          i;
+    int          rlen;
+    int          ulen;
     int          dirty;
+    int          j;
 
     n_cells = term_height * term_width;
     ucell   = update_screen->cells;
     rcell   = render_screen->cells;
 
     for (i = 0; i < n_cells; i += 1) {
-        dirty =    (rcell->glyph.data != ucell->glyph.data)
-                || (rcell->bg_set     != ucell->bg_set)
-                || (rcell->bg         != ucell->bg)
-                || (rcell->fg_set     != ucell->fg_set)
-                || (rcell->fg         != ucell->fg);
+        rlen  = glyph_len(&rcell->glyph);
+        ulen  = glyph_len(&ucell->glyph);
+
+        dirty = 0;
+
+        if (rlen != ulen) {
+            dirty = 1;
+        } else {
+            for (j = 0; j < rlen; j += 1) {
+                if (rcell->glyph.bytes[j] != ucell->glyph.bytes[j]) {
+                    dirty = 1;
+                    break;
+                }
+            }
+            if (!dirty) {
+                dirty =    (rcell->bg_set     != ucell->bg_set)
+                        || (rcell->bg         != ucell->bg)
+                        || (rcell->fg_set     != ucell->fg_set)
+                        || (rcell->fg         != ucell->fg);
+            }
+        }
 
         *rcell       = *ucell;
         rcell->dirty = dirty;
@@ -1101,8 +1161,10 @@ static void diff_and_swap_screens(void) {
 
 void flush_screen(void) {
     Screen_Cell *cell;
-    int          row;
-    int          col;
+    unsigned     row;
+    unsigned     col;
+
+    diff_and_swap_screens();
 
     printf("\033[?2026h");
 
@@ -1119,7 +1181,7 @@ void flush_screen(void) {
 
     for (row = 1; row <= term_height; row += 1) {
         for (col = 1; col <= term_width; col += 1) {
-            if (cell->dirty && cell->glyph.data) {
+            if (cell->dirty) {
                 if (render_screen->cur_row != row
                 &&  render_screen->cur_col != col) {
                     printf("\033[%d;%dH", row, col);
@@ -1149,9 +1211,9 @@ void flush_screen(void) {
 
                     if (cell->fg_set) {
                         printf("\033[38;2;%d;%d;%dm",
-                            (cell->bg & 0xff0000) >> 16,
-                            (cell->bg & 0x00ff00) >> 8,
-                            cell->bg & 0x0000ff);
+                            (cell->fg & 0xff0000) >> 16,
+                            (cell->fg & 0x00ff00) >> 8,
+                            cell->fg & 0x0000ff);
                     }
 
                     render_screen->cur_bg     = cell->bg;
@@ -1160,7 +1222,11 @@ void flush_screen(void) {
                     render_screen->cur_fg_set = cell->fg_set;
                 }
 
-                fwrite(&cell->glyph.c, 1, glyph_len(cell->glyph), stdout);
+                if (cell->glyph.bytes[0]) {
+                    fwrite(&cell->glyph.c, 1, glyph_len(&cell->glyph), stdout);
+                } else {
+                    fwrite(" ", 1, 1, stdout);
+                }
 
                 render_screen->cur_col += 1;
             }
@@ -1171,6 +1237,29 @@ void flush_screen(void) {
     }
 
     printf("\033[?2026l");
+}
+
+static Julie_Status j_term_exit(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result) {
+    Julie_Status status;
+
+    status = JULIE_SUCCESS;
+
+    (void)values;
+    if (n_values != 0) {
+        status = JULIE_ERR_ARITY;
+        julie_make_arity_error(interp, expr, 0, n_values, 0);
+        *result = NULL;
+        goto out;
+    }
+
+    printf(TERM_RESET TERM_CURSOR_HOME TERM_CLEAR_SCREEN);
+    restore_term();
+    exit(0);
+
+    *result = julie_nil_value(interp);
+
+out:;
+    return status;
 }
 
 static Julie_Status j_term_clear(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result) {
@@ -1186,8 +1275,7 @@ static Julie_Status j_term_clear(Julie_Interp *interp, Julie_Value *expr, unsign
         goto out;
     }
 
-    printf(TERM_RESET TERM_CURSOR_HOME TERM_CLEAR_SCREEN);
-    resize_term();
+    clear_screen(update_screen);
 
     *result = julie_nil_value(interp);
 
@@ -1345,6 +1433,75 @@ static Julie_Status j_term_set_cell_fg(Julie_Interp *interp, Julie_Value *expr, 
 
 out_free_color:;
     julie_free_value(interp, color);
+out_free_col:;
+    julie_free_value(interp, col);
+out_free_row:;
+    julie_free_value(interp, row);
+
+out:;
+    return status;
+}
+
+static Julie_Status j_term_set_cell_char(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result) {
+    Julie_Status  status;
+    Julie_Value  *row;
+    Julie_Value  *col;
+    Julie_Value  *c;
+
+    status = JULIE_SUCCESS;
+
+    if (n_values != 3) {
+        status = JULIE_ERR_ARITY;
+        julie_make_arity_error(interp, expr, 3, n_values, 0);
+        *result = NULL;
+        goto out;
+    }
+
+    status = julie_eval(interp, values[0], &row);
+    if (status != JULIE_SUCCESS) {
+        *result = NULL;
+        goto out;
+    }
+
+    if (!JULIE_TYPE_IS_INTEGER(row->type)) {
+        *result = NULL;
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[0], _JULIE_INTEGER, row->type);
+        goto out_free_row;
+    }
+
+    status = julie_eval(interp, values[1], &col);
+    if (status != JULIE_SUCCESS) {
+        *result = NULL;
+        goto out_free_row;
+    }
+
+    if (!JULIE_TYPE_IS_INTEGER(col->type)) {
+        *result = NULL;
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[1], _JULIE_INTEGER, col->type);
+        goto out_free_col;
+    }
+
+    status = julie_eval(interp, values[2], &c);
+    if (status != JULIE_SUCCESS) {
+        *result = NULL;
+        goto out_free_col;
+    }
+
+    if (c->type != JULIE_STRING) {
+        *result = NULL;
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[2], JULIE_STRING, c->type);
+        goto out_free_c;
+    }
+
+    set_cell_glyph(row->uint, col->uint, julie_value_cstring(c));
+
+    *result = julie_nil_value(interp);
+
+out_free_c:;
+    julie_free_value(interp, c);
 out_free_col:;
     julie_free_value(interp, col);
 out_free_row:;
