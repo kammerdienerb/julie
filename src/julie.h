@@ -8016,7 +8016,7 @@ static Julie_Status julie_builtin_fread_lines(Julie_Interp *interp, Julie_Value 
     FILE         *f;
     char         *line;
     size_t        cap;
-    size_t        len;
+    ssize_t       len;
 
     status = julie_args(interp, expr, "o", n_values, values, &file);
     if (status != JULIE_SUCCESS) {
@@ -8045,15 +8045,15 @@ static Julie_Status julie_builtin_fread_lines(Julie_Interp *interp, Julie_Value 
 
     line = NULL;
     cap  = 0;
-    while ((len = getline(&line, &cap, f)) <= 0) {
-        if (len == 0) { continue; }
+    while ((len = getline(&line, &cap, f)) > 0) {
         if (line[len - 1] == '\n') {
-            len -= 1;
+            line[len - 1] = 0;
         }
         JULIE_ARRAY_PUSH((*result)->list, julie_string_value_giveaway(interp, line));
         line = NULL;
         cap  = 0;
     }
+
     if (line != NULL) {
         free(line);
     }
@@ -8985,6 +8985,7 @@ void julie_free(Julie_Interp *interp) {
     Julie_Value_Store_Block                      *next;
     char                                         *key;
     Julie_String_ID                              *id;
+    int                                           i;
     Julie_Source_Value_Info                      *info;
     Julie_Apply_Context                          *cxt;
     void                                         *handle;
@@ -9022,6 +9023,12 @@ void julie_free(Julie_Interp *interp) {
     }
 
     hash_table_free(interp->strings);
+
+    for (i = 0; i < JULIE_STRING_CACHE_SIZE; i += 1) {
+        if (interp->string_cache_pointers[i] != NULL) {
+            free(interp->string_cache_pointers[i]);
+        }
+    }
 
     julie_array_free(interp->iter_vals);
 
