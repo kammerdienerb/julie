@@ -204,7 +204,7 @@ typedef struct {
 
 
 
-static Julie_Interp    interp;
+static Julie_Interp   *interp;
 static struct termios  save_term;
 static int             term_set;
 static unsigned        term_height;
@@ -233,7 +233,7 @@ static Julie_Status j_term_set_cell_fg(Julie_Interp *interp, Julie_Value *expr, 
 static Julie_Status j_term_set_cell_char(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result);
 
 #undef JULIE_BIND_FN
-#define JULIE_BIND_FN(_name, _fn) julie_bind_fn(&interp, julie_get_string_id(&interp, (_name)), (_fn))
+#define JULIE_BIND_FN(_name, _fn) julie_bind_fn(interp, julie_get_string_id(interp, (_name)), (_fn))
 
 int main(int argc, char **argv) {
     Julie_Status status;
@@ -241,8 +241,8 @@ int main(int argc, char **argv) {
     int          input[32];
     int          i;
 
-    julie_init_interp(&interp);
-    julie_set_error_callback(&interp, on_julie_error);
+    interp = julie_init_interp();
+    julie_set_error_callback(interp, on_julie_error);
 
     JULIE_BIND_FN("@term:exit",          j_term_exit);
     JULIE_BIND_FN("@term:clear",         j_term_clear);
@@ -251,12 +251,12 @@ int main(int argc, char **argv) {
     JULIE_BIND_FN("@term:set-cell-fg",   j_term_set_cell_fg);
     JULIE_BIND_FN("@term:set-cell-char", j_term_set_cell_char);
 
-    interp.cur_file_id = julie_get_string_id(&interp, "term.j");
-    julie_parse(&interp, (const char*)term_j, term_j_len);
+    julie_set_cur_file(interp, julie_get_string_id(interp, "term.j"));
+    julie_parse(interp, (const char*)term_j, term_j_len);
 
     set_term();
 
-    status = julie_interp(&interp);
+    status = julie_interp(interp);
 
     if (status != JULIE_SUCCESS) {
         restore_term();
@@ -281,7 +281,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    julie_free(&interp);
+    julie_free(interp);
     restore_term();
 
     return 0;
@@ -367,7 +367,7 @@ static void on_julie_error(Julie_Error_Info *info) {
         case JULIE_ERR_BAD_INDEX:
             s = julie_to_string(info->interp, info->bad_index.bad_index, 0);
             fprintf(stderr, " (index: %s)", s);
-            JULIE_FREE(s);
+            free(s);
             break;
         case JULIE_ERR_FILE_NOT_FOUND:
         case JULIE_ERR_FILE_IS_DIR:
@@ -398,7 +398,7 @@ static void on_julie_error(Julie_Error_Info *info) {
                 cyan,
                 s,
                 reset);
-        JULIE_FREE(s);
+        free(s);
     }
 
     julie_free_error_info(info);
@@ -849,19 +849,19 @@ static void resize_event(void) {
     Julie_Value *list;
     Julie_Value *result;
 
-    fn = julie_lookup(&interp, julie_get_string_id(&interp, "@on-resize"));
+    fn = julie_lookup(interp, julie_get_string_id(interp, "@on-resize"));
     if (fn == NULL) { return; }
 
-    list = julie_list_value(&interp);
-    JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "@on-resize")));
-    JULIE_ARRAY_PUSH(list->list, julie_sint_value(&interp, term_height));
-    JULIE_ARRAY_PUSH(list->list, julie_sint_value(&interp, term_width));
+    list = julie_list_value(interp);
+    JULIE_ARRAY_PUSH(list->list, julie_symbol_value(interp, julie_get_string_id(interp, "@on-resize")));
+    JULIE_ARRAY_PUSH(list->list, julie_sint_value(interp, term_height));
+    JULIE_ARRAY_PUSH(list->list, julie_sint_value(interp, term_width));
 
-    julie_eval(&interp, list, &result);
+    julie_eval(interp, list, &result);
     if (result != NULL) {
-        julie_free_value(&interp, result);
+        julie_free_value(interp, result);
     }
-    julie_free_value(&interp, list);
+    julie_free_value(interp, list);
 }
 
 static void clear_screen(Screen *screen) {
@@ -916,40 +916,40 @@ static void mouse_event(int mouse) {
     Julie_Value *list;
     Julie_Value *result;
 
-    fn = julie_lookup(&interp, julie_get_string_id(&interp, "@on-mouse"));
+    fn = julie_lookup(interp, julie_get_string_id(interp, "@on-mouse"));
     if (fn == NULL) { return; }
 
-    list = julie_list_value(&interp);
-    JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "@on-mouse")));
-    JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'mouse")));
+    list = julie_list_value(interp);
+    JULIE_ARRAY_PUSH(list->list, julie_symbol_value(interp, julie_get_string_id(interp, "@on-mouse")));
+    JULIE_ARRAY_PUSH(list->list, julie_symbol_value(interp, julie_get_string_id(interp, "'mouse")));
     if (MOUSE_KIND(mouse) == MOUSE_PRESS) {
-        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'down")));
+        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(interp, julie_get_string_id(interp, "'down")));
     } else if (MOUSE_KIND(mouse) == MOUSE_RELEASE) {
-        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'up")));
+        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(interp, julie_get_string_id(interp, "'up")));
     } else if (MOUSE_KIND(mouse) == MOUSE_DRAG) {
-        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'drag")));
+        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(interp, julie_get_string_id(interp, "'drag")));
     } else if (MOUSE_KIND(mouse) == MOUSE_OVER) {
-        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'over")));
+        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(interp, julie_get_string_id(interp, "'over")));
     } else {
-        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'???")));
+        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(interp, julie_get_string_id(interp, "'???")));
     }
     if (MOUSE_BUTTON(mouse) == MOUSE_BUTTON_LEFT) {
-        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'left")));
+        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(interp, julie_get_string_id(interp, "'left")));
     } else if (MOUSE_BUTTON(mouse) == MOUSE_BUTTON_MIDDLE) {
-        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'middle")));
+        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(interp, julie_get_string_id(interp, "'middle")));
     } else if (MOUSE_BUTTON(mouse) == MOUSE_BUTTON_RIGHT) {
-        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'right")));
+        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(interp, julie_get_string_id(interp, "'right")));
     } else {
-        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "'???")));
+        JULIE_ARRAY_PUSH(list->list, julie_symbol_value(interp, julie_get_string_id(interp, "'???")));
     }
-    JULIE_ARRAY_PUSH(list->list, julie_sint_value(&interp, MOUSE_ROW(mouse)));
-    JULIE_ARRAY_PUSH(list->list, julie_sint_value(&interp, MOUSE_COL(mouse)));
+    JULIE_ARRAY_PUSH(list->list, julie_sint_value(interp, MOUSE_ROW(mouse)));
+    JULIE_ARRAY_PUSH(list->list, julie_sint_value(interp, MOUSE_COL(mouse)));
 
-    julie_eval(&interp, list, &result);
+    julie_eval(interp, list, &result);
     if (result != NULL) {
-        julie_free_value(&interp, result);
+        julie_free_value(interp, result);
     }
-    julie_free_value(&interp, list);
+    julie_free_value(interp, list);
 }
 
 static void key_event(int code) {
@@ -958,23 +958,23 @@ static void key_event(int code) {
     Julie_Value *list;
     Julie_Value *result;
 
-    fn = julie_lookup(&interp, julie_get_string_id(&interp, "@on-key"));
+    fn = julie_lookup(interp, julie_get_string_id(interp, "@on-key"));
     if (fn == NULL) { return; }
 
     str = key_to_string(code);
     if (str == NULL) { return; }
 
-    list = julie_list_value(&interp);
-    JULIE_ARRAY_PUSH(list->list, julie_symbol_value(&interp, julie_get_string_id(&interp, "@on-key")));
-    JULIE_ARRAY_PUSH(list->list, julie_string_value(&interp, str));
+    list = julie_list_value(interp);
+    JULIE_ARRAY_PUSH(list->list, julie_symbol_value(interp, julie_get_string_id(interp, "@on-key")));
+    JULIE_ARRAY_PUSH(list->list, julie_string_value(interp, str));
 
     free(str);
 
-    julie_eval(&interp, list, &result);
+    julie_eval(interp, list, &result);
     if (result != NULL) {
-        julie_free_value(&interp, result);
+        julie_free_value(interp, result);
     }
-    julie_free_value(&interp, list);
+    julie_free_value(interp, list);
 }
 
 static void sig_handler(int sig) {

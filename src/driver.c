@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <libgen.h>
 
-Julie_Interp interp;
+Julie_Interp *interp;
 
 static void on_julie_error(Julie_Error_Info *info);
 
@@ -32,11 +32,10 @@ int main(int argc, char **argv) {
     }
 
 
-    julie_init_interp(&interp);
-    julie_set_error_callback(&interp, on_julie_error);
-    julie_set_argv(&interp, argc - 1, argv + 1);
-    interp.cur_file_id = julie_get_string_id(&interp, argv[1]);
-
+    interp = julie_init_interp();
+    julie_set_error_callback(interp, on_julie_error);
+    julie_set_argv(interp, argc - 1, argv + 1);
+    julie_set_cur_file(interp, julie_get_string_id(interp, argv[1]));
 
     exe_path_length = wai_getExecutablePath(NULL, 0, NULL);
     if (exe_path_length >= 0) {
@@ -47,13 +46,13 @@ int main(int argc, char **argv) {
         exe_dir = dirname(exe_path);
 /*         strcat(exe_dir, "/packages"); */
 
-        julie_add_package_directory(&interp, exe_dir);
+        julie_add_package_directory(interp, exe_dir);
         free(exe_path);
     }
 
-    julie_parse(&interp, code, strlen(code));
-    julie_interp(&interp);
-    julie_free(&interp);
+    julie_parse(interp, code, strlen(code));
+    julie_interp(interp);
+    julie_free(interp);
 
     return 0;
 }
@@ -137,7 +136,7 @@ static void on_julie_error(Julie_Error_Info *info) {
         case JULIE_ERR_BAD_INDEX:
             s = julie_to_string(info->interp, info->bad_index.bad_index, 0);
             fprintf(stderr, " (index: %s)", s);
-            JULIE_FREE(s);
+            free(s);
             break;
         case JULIE_ERR_FILE_NOT_FOUND:
         case JULIE_ERR_FILE_IS_DIR:
@@ -153,11 +152,8 @@ static void on_julie_error(Julie_Error_Info *info) {
 
     fprintf(stderr, "%s\n", reset);
 
-    for (i = info->interp->apply_depth; i > 0; i -= 1) {
-        if (i == info->interp->apply_depth) { continue; }
-
-        it = &(((Julie_Apply_Context*)julie_array_elem(info->interp->apply_contexts, i - 1))->bt_entry);
-
+    i = 1;
+    while ((it = julie_bt_entry(interp, i)) != NULL) {
         s = julie_to_string(info->interp, it->fn, 0);
         fprintf(stderr, "    %s%s:%llu:%llu%s %s%s%s\n",
                 blue,
@@ -168,7 +164,9 @@ static void on_julie_error(Julie_Error_Info *info) {
                 cyan,
                 s,
                 reset);
-        JULIE_FREE(s);
+        free(s);
+
+        i += 1;
     }
 
     julie_free_error_info(info);

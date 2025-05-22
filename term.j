@@ -142,6 +142,8 @@ parse-input =
         # TODO: get rid of more julie_args
         # TODO: match
 
+        strings = (object)
+
         i = 0
         foreach &line lines
 #             if ((i % 10000) == 0)
@@ -151,11 +153,14 @@ parse-input =
             fields = (splits &line "\t")
 
             if   ((fields 0) == "eustall") (stalls += 1)
-            elif ((fields 0) == "string")  nil
+            elif ((fields 0) == "string") nil
+#                 strings <- ((fields 1) : (fields 2))
 
             i += 1
 
         fclose f
+
+        println strings
 
         @term:exit
 
