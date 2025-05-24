@@ -85,85 +85,138 @@ in-element =
 
 ### CONTENT ###
 
+get-color =
+    fn (r)
+        h = 0.0
+        s = 0.5
+        v = (0.75 + (((float ((r % 1000) + 1)) / 1000.0) * 0.15))
+
+        R = 0.0
+        G = 0.0
+        B = 0.0
+        C = (v * s)
+        X = (C * (1 - (abs (((h / (3.14159 / 3.0)) % 2.0) - 1))))
+        m = (v - C)
+
+        if ((h >= 0.0) and (h < (3.14159 / 3.0)))
+            R = C
+            G = X
+            B = 0
+        elif ((h >= (3.14159 / 3.0)) and (h < ((2.0 * 3.14159) / 3.0)))
+            R = X
+            G = C
+            B = 0
+        elif ((h >= ((2.0 * 3.14159) / 3.0)) and (h < 3.14159))
+            R = 0
+            G = C
+            B = X
+        elif ((h >= (3.14159 / 2.0)) and (h < ((4.0 * 3.14159) / 3.0)))
+            R = 0
+            G = X
+            B = C
+        elif ((h >= ((4.0 * 3.14159) / 3.0)) and (h < ((5.0 * 3.14159) / 3.0)))
+            R = X
+            G = 0
+            B = C
+        elif ((h >= ((5.0 * 3.14159) / 3.0)) and (h < (2.0 * 3.14159)))
+            R = C
+            G = 0
+            B = X
+
+        (((sint ((R + m) * 255)) & 255) << 16) |
+            (((sint ((G + m) * 255)) & 255) << 8) |
+                (sint ((B + m) * 255)) & 255
+
+draw-flame =
+    fn (&frame row start-col width)
+        if ((width >= 1) and (row >= 1))
+            text = (&frame 'label)
+            if (width == 1)
+                text = ""
+            else
+                if (((len text) > (width - 1)) and (width > 2))
+                    text =
+                        fmt "%.." (substr text 0 (width - 3))
+                text = (substr text 0 (width - 1))
+
+            rect row start-col 1 width (get-color (&frame 'rand))
+                'text : text
+
+            sorted-children-labels = (list)
+            foreach label (&frame 'children)
+                &child = ((&frame 'children) label)
+                append sorted-children-labels (label : (&child 'count))
+                unref &child
+            sorted-children-labels = (sorted sorted-children-labels (fn (a b) ((a 1) > (b 1))))
+
+            child-offset = 0
+            foreach &pair sorted-children-labels
+                &child = ((&frame 'children) (&pair 0))
+
+                child-width = (sint (((float (&child 'count)) / (float (&frame 'count))) * width))
+                if (child-width < 1) (child-width = 1)
+
+                if ((child-offset + child-width) >= width)
+                    child-width = (width - child-offset)
+
+                if (child-width > 0)
+                    draw-flame &child (row - 1) (start-col + child-offset) child-width
+
+                child-offset += child-width
+                unref &child
+
 create-elements =
     fn ()
         elements := (list)
 
-#         f = (fopen-rd "build.sh")
-#         row = 1
-#         color = 0xffff00
-#         foreach line (fread-lines f)
-#             text row 1 line
-#                 'color : color
-#             color += 10
-#             row += 1
-#         fclose f
+        if (flame-graph != nil)
+            draw-flame flame-graph rows 1 cols
 
-#         rect 30 1 2 4 0xff0000
-#             'text       : "red box"
-#             'text-color : 0xffffff
-#             'on-click   :
-#                 fn (&rect row col)
-#                     (&rect 'text-color) = (~ (&rect 'text-color))
-#                     (&rect 'color) = (~ (&rect 'color))
-#                     paint
-#         rect 35 6 4 8 0x0000ff
-#             'on-click :
-#                 fn (&rect row col)
-#                     (&rect 'color) = (~ (&rect 'color))
-#                     paint
-#         rect 40 12 1 16 0x006060
-#             'text       : "frame"
-#             'text-color : 0xffffff
-
-        text rows 1 "press 'q' to quit"
+        text 1 1 "press 'q' to quit"
 
 
 ### INPUT ###
 
+flame-graph = nil
+
+new-frame =
+    fn (&label)
+        object
+            'label    : &label
+            'rand     : (rand)
+            'count    : 0
+            'children : (object)
+
+add-flame =
+    fn (&frame &stack &count)
+        if (len &stack)
+            &children = (&frame 'children)
+
+            fname = (&stack 0)
+            erase &stack 0
+
+            if (not (fname in &children))
+                &children <- (fname : (new-frame fname))
+
+            add-flame (&children fname) &stack &count
+
+        (&frame 'count) += &count
+
 parse-input =
     fn ()
-        elements = (list)
+        flame-graph := (new-frame "all")
 
-        rect rows 1 1 1 0xffffff
-        &bar = (newest-element)
+        f = (fopen-rd "term.flamegraph")
 
-        text rows 1 "Loading"
-            'color : 0x0000ff
+        foreach &line (fread-lines f)
+            stack = (split &line ";")
+            s     = (split (pop stack) " ")
+            count = (parse-int (s 1))
+            append stack (s 0)
 
-        paint
-
-        f      = (fopen-rd "orig.txt")
-        lines  = (fread-lines f)
-        nlines = (len lines)
-
-        stalls = 0
-
-        # TODO: get rid of more julie_args
-        # TODO: match
-
-        strings = (object)
-
-        i = 0
-        foreach &line lines
-#             if ((i % 10000) == 0)
-#                 (&bar 'width) = (sint (((float i) / nlines) * cols))
-#                 paint
-
-            fields = (splits &line "\t")
-
-            if   ((fields 0) == "eustall") (stalls += 1)
-            elif ((fields 0) == "string") nil
-#                 strings <- ((fields 1) : (fields 2))
-
-            i += 1
+            add-flame flame-graph stack count
 
         fclose f
-
-        println strings
-
-        @term:exit
-
 
 key-actions =
     object
@@ -181,10 +234,20 @@ key-actions =
                 if (('on-click in &elem) and (in-element &elem row col))
                     (&elem 'on-click) &elem row col
 
-@on-resize =
+redraw =
     fn (rows cols)
         rows := rows
         cols := cols
-        parse-input
         create-elements
         paint
+
+
+@on-init =
+    fn (rows cols)
+        redraw rows cols
+        parse-input
+        redraw rows cols
+
+@on-resize =
+    fn (rows cols)
+        redraw rows cols
