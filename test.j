@@ -5,8 +5,7 @@ l =
         do
             &v = v
             &v = 789
-            printf "v = %" &v
-
+            printf "v = %\n" &v
 
 v = "not captured"
 
@@ -18,7 +17,8 @@ factorial =
             n
             n * (factorial (n - 1))
 
-factorial 5
+println
+    factorial 5
 
 foo = (fn (&y) "result of foo")
 
@@ -33,7 +33,9 @@ change =
 
 change foo bar
 zip = 123
-call foo zip
+println
+    call foo zip
+println zip
 
 append (list 1 2 3 4 5) 6
 
