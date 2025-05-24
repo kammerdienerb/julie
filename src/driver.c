@@ -152,7 +152,7 @@ static void on_julie_error(Julie_Error_Info *info) {
 
     fprintf(stderr, "%s\n", reset);
 
-    i = 1;
+    i = 0;
     while ((it = julie_bt_entry(interp, i)) != NULL) {
         s = julie_to_string(info->interp, it->fn, 0);
         fprintf(stderr, "    %s%s:%llu:%llu%s %s%s%s\n",
