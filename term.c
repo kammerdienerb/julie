@@ -220,6 +220,7 @@ static void on_julie_error(Julie_Error_Info *info);
 static void set_term(void);
 static void restore_term(void);
 static int  read_keys(int *input);
+static void init_event(void);
 static void resize_term(void);
 static void resize_event(void);
 static void mouse_event(int key);
@@ -263,7 +264,7 @@ int main(int argc, char **argv) {
         return status;
     }
 
-    resize_event();
+    init_event();
 
     for (;;) {
         if (term_resized) {
@@ -842,6 +843,26 @@ char *key_to_string(int key) {
     }
 
     return strdup(key_buff);
+}
+
+static void init_event(void) {
+    Julie_Value *fn;
+    Julie_Value *list;
+    Julie_Value *result;
+
+    fn = julie_lookup(interp, julie_get_string_id(interp, "@on-init"));
+    if (fn == NULL) { return; }
+
+    list = julie_list_value(interp);
+    JULIE_ARRAY_PUSH(list->list, julie_symbol_value(interp, julie_get_string_id(interp, "@on-init")));
+    JULIE_ARRAY_PUSH(list->list, julie_sint_value(interp, term_height));
+    JULIE_ARRAY_PUSH(list->list, julie_sint_value(interp, term_width));
+
+    julie_eval(interp, list, &result);
+    if (result != NULL) {
+        julie_free_value(interp, result);
+    }
+    julie_free_value(interp, list);
 }
 
 static void resize_event(void) {
