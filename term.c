@@ -252,6 +252,7 @@ int main(int argc, char **argv) {
     JULIE_BIND_FN("@term:set-cell-fg",   j_term_set_cell_fg);
     JULIE_BIND_FN("@term:set-cell-char", j_term_set_cell_char);
 
+    julie_set_argv(interp, argc, argv);
     julie_set_cur_file(interp, julie_get_string_id(interp, "term.j"));
     julie_parse(interp, (const char*)term_j, term_j_len);
 

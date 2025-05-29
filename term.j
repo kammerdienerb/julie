@@ -85,11 +85,85 @@ in-element =
 
 ### CONTENT ###
 
+
+draw-flame =
+    fn (&frame row start-col width)
+        if ((width >= 1) and (row > 1))
+            text = (&frame 'label)
+
+            if (width > 1)
+                if (((len text) > (width - 1)) and (width > 2))
+                    text = (fmt "%.." (substr text 0 (width - 3)))
+                text = (substr text 0 (width - 1))
+            else
+                text = ""
+
+            rect row start-col 1 width (&frame 'color)
+                'text       : text
+                'text-color : 0x000000
+
+            &children = (&frame 'children)
+
+            child-offset = 0
+            foreach &label (&frame 'sorted-children-labels)
+                &child = (&children &label)
+
+                child-width = (sint (((float (&child 'count)) / (float (&frame 'count))) * width))
+                if (child-width < 1) (child-width = 1)
+
+                if ((child-offset + child-width) >= width)
+                    child-width = (width - child-offset)
+
+                if (child-width > 0)
+                    draw-flame &child (row - 1) (start-col + child-offset) child-width
+
+                child-offset += child-width
+                unref &child
+
+create-elements =
+    fn ()
+        elements := (list)
+
+        if (flame-graph != nil)
+            draw-flame flame-graph rows 1 cols
+
+        text 1 1 "press 'q' to quit"
+
+loading-screen =
+    fn ()
+        elements := (list)
+        text 1 1 "LOADING..."
+        paint
+
+
+### INPUT ###
+
+flame-graph = nil
+
 get-color =
-    fn (r)
+    fn (type r)
         h = 0.0
         s = 0.5
-        v = (0.75 + (((float ((r % 1000) + 1)) / 1000.0) * 0.15))
+        v = 0.75
+
+        match type
+            'divider
+                s = 0.0
+                v = 0.5
+            'kernel
+                h = (0.15 * 3.14159)
+            'cpp
+                h = (0.25 * 3.14159)
+            'python
+                h = 0.0
+                s = 0.25
+            'gpu-symbol
+                h = 3.14159
+            'gpu-inst
+                h = (0.6 * 3.14159)
+
+        if (type != 'divider)
+            v += (((float ((r % 1000) + 1)) / 1000.0) * 0.15)
 
         R = 0.0
         G = 0.0
@@ -127,96 +201,86 @@ get-color =
             (((sint ((G + m) * 255)) & 255) << 8) |
                 (sint ((B + m) * 255)) & 255
 
-draw-flame =
-    fn (&frame row start-col width)
-        if ((width >= 1) and (row >= 1))
-            text = (&frame 'label)
-            if (width == 1)
-                text = ""
-            else
-                if (((len text) > (width - 1)) and (width > 2))
-                    text =
-                        fmt "%.." (substr text 0 (width - 3))
-                text = (substr text 0 (width - 1))
-
-            rect row start-col 1 width (get-color (&frame 'rand))
-                'text : text
-
-            sorted-children-labels = (list)
-            foreach label (&frame 'children)
-                &child = ((&frame 'children) label)
-                append sorted-children-labels (label : (&child 'count))
-                unref &child
-            sorted-children-labels = (sorted sorted-children-labels (fn (a b) ((a 1) > (b 1))))
-
-            child-offset = 0
-            foreach &pair sorted-children-labels
-                &child = ((&frame 'children) (&pair 0))
-
-                child-width = (sint (((float (&child 'count)) / (float (&frame 'count))) * width))
-                if (child-width < 1) (child-width = 1)
-
-                if ((child-offset + child-width) >= width)
-                    child-width = (width - child-offset)
-
-                if (child-width > 0)
-                    draw-flame &child (row - 1) (start-col + child-offset) child-width
-
-                child-offset += child-width
-                unref &child
-
-create-elements =
-    fn ()
-        elements := (list)
-
-        if (flame-graph != nil)
-            draw-flame flame-graph rows 1 cols
-
-        text 1 1 "press 'q' to quit"
-
-
-### INPUT ###
-
-flame-graph = nil
-
 new-frame =
-    fn (&label)
+    fn (label)
+        type = 'unknown
+
+        if (startswith label "py::")
+            type = 'python
+        elif (contains label "::")
+            type = 'cpp
+        elif (endswith label "_[k]")
+            type = 'kernel
+            label = (substr label 0 ((len label) - 4))
+        elif (endswith label "_[g]")
+            type = 'gpu-inst
+            label = (substr label 0 ((len label) - 4))
+        elif (endswith label "_[G]")
+            type = 'gpu-symbol
+            label = (substr label 0 ((len label) - 4))
+        elif (label == "-")
+            type = 'divider
+
         object
-            'label    : &label
-            'rand     : (rand)
-            'count    : 0
-            'children : (object)
+            'label                  : label
+            'type                   : type
+            'color                  : (get-color type (rand))
+            'count                  : 0
+            'children               : (object)
+            'sorted-children-labels : (list)
 
 add-flame =
     fn (&frame &stack &count)
         if (len &stack)
-            &children = (&frame 'children)
-
             fname = (&stack 0)
             erase &stack 0
 
-            if (not (fname in &children))
-                &children <- (fname : (new-frame fname))
+            &child = (&frame 'children)
 
-            add-flame (&children fname) &stack &count
+            if (not (fname in &child))
+                &child <- (fname : (new-frame fname))
+
+            add-flame (&child fname) &stack &count
 
         (&frame 'count) += &count
+
+get-sorted =
+    fn (&frame)
+        &children = (&frame 'children)
+        if (len &children)
+            sorted-children-labels = (list)
+
+            foreach label &children
+                &child = (&children label)
+                get-sorted &child
+                append sorted-children-labels (label : ((&children label) 'count))
+                unref &child
+
+            sorted-children-labels = (sorted sorted-children-labels (fn (a b) ((a 1) > (b 1))))
+
+            foreach &pair sorted-children-labels
+                append (&frame 'sorted-children-labels) (&pair 0)
 
 parse-input =
     fn ()
         flame-graph := (new-frame "all")
 
-        f = (fopen-rd "term.flamegraph")
+        f = (fopen-rd ((argv) 1))
 
         foreach &line (fread-lines f)
+            if ((m = (&line =~ "(;|[[:space:]]+)([0-9]+)$")) != nil)
+                count = (parse-int (m 2))
+                &line = (substr &line 0 ((len &line) - (len (m 0))))
+            else
+                count = 1
+
             stack = (split &line ";")
-            s     = (split (pop stack) " ")
-            count = (parse-int (s 1))
-            append stack (s 0)
 
             add-flame flame-graph stack count
 
         fclose f
+
+        get-sorted flame-graph
 
 key-actions =
     object
@@ -238,6 +302,7 @@ redraw =
     fn (rows cols)
         rows := rows
         cols := cols
+        loading-screen
         create-elements
         paint
 
@@ -245,6 +310,7 @@ redraw =
 @on-init =
     fn (rows cols)
         redraw rows cols
+        loading-screen
         parse-input
         redraw rows cols
 

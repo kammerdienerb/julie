@@ -146,6 +146,9 @@ static void on_julie_error(Julie_Error_Info *info) {
         case JULIE_ERR_LOAD_PACKAGE_FAILURE:
             fprintf(stderr, " (%s) %s", info->load_package_failure.path, info->load_package_failure.package_error_message);
             break;
+        case JULIE_ERR_REGEX:
+            fprintf(stderr, " %s", info->regex.regex_error_message);
+            break;
         default:
             break;
     }
