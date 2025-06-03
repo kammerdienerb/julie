@@ -4080,6 +4080,42 @@ out:;
     return status;
 }
 
+static Julie_Status julie_builtin_is_bound(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result) {
+    Julie_Status     status;
+    Julie_Value     *sym;
+    Julie_String_ID  id;
+    Julie_Value     *lookup;
+
+    status = JULIE_SUCCESS;
+
+    *result = NULL;
+
+    if (n_values != 1) {
+        status = JULIE_ERR_ARITY;
+        julie_make_arity_error(interp, expr, 1, n_values, 0);
+        goto out;
+    }
+
+    sym = values[0];
+
+    if (sym->type != JULIE_SYMBOL) {
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[0], JULIE_SYMBOL, sym->type);
+        *result = NULL;
+        goto out;
+    }
+
+    id = sym->tag == JULIE_STRING_TYPE_INTERN
+            ? sym->string_id
+            : julie_get_string_id(interp, julie_value_cstring(sym));
+
+    lookup = julie_lookup(interp, id);
+
+    *result = julie_sint_value(interp, lookup != NULL);
+
+out:;
+    return status;
+}
 
 static Julie_Status julie_builtin_add(Julie_Interp *interp, Julie_Value *expr, unsigned n_values, Julie_Value **values, Julie_Value **result) {
     Julie_Status  status;
@@ -9548,6 +9584,7 @@ Julie_Interp *julie_init_interp(void) {
     JULIE_BIND_INFIX_FN("=",                     julie_builtin_assign);
     JULIE_BIND_INFIX_FN(":=",                    julie_builtin_assign_global);
     JULIE_BIND_FN(      "unref",                 julie_builtin_unref);
+    JULIE_BIND_FN(      "is-bound",              julie_builtin_is_bound);
 
     JULIE_BIND_INFIX_FN("+",                     julie_builtin_add);
     JULIE_BIND_INFIX_FN("+=",                    julie_builtin_add_assign);
