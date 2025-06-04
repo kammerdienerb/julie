@@ -1989,7 +1989,7 @@ Julie_Status _julie_object_insert_field(Julie_Interp *interp, Julie_Value *objec
 
     if (!skip_lookup && (lookup = hash_table_get_val((_Julie_Object)object->object, key)) != NULL) {
         if (*lookup != val) {
-            if (julie_borrows_to_subvalues_outstanding(*lookup, *lookup)) {
+            if (object->borrow_count > 0 && julie_borrows_to_subvalues_outstanding(*lookup, *lookup)) {
                 return JULIE_ERR_RELEASE_WHILE_BORROWED;
             }
 
@@ -4012,9 +4012,11 @@ static Julie_Status _julie_builtin_assign(Julie_Interp *interp, Julie_Value *exp
             goto out_free;
         }
 
-        cpy = julie_force_copy(interp, rval);
-        julie_free_value(interp, rval);
-        rval = cpy;
+        if (rval->borrow_count > 0) {
+            cpy = julie_force_copy(interp, rval);
+            julie_free_value(interp, rval);
+            rval = cpy;
+        }
         julie_replace_value(interp, lval, rval);
         rval = lval;
     }
@@ -5590,9 +5592,11 @@ static Julie_Status julie_builtin_append(Julie_Interp *interp, Julie_Value *expr
         goto out;
     }
 
-    cpy = julie_force_copy(interp, val);
-    julie_free_value(interp, val);
-    val = cpy;
+    if (val->borrow_count > 0 || val->source_leaf) {
+        cpy = julie_force_copy(interp, val);
+        julie_free_value(interp, val);
+        val = cpy;
+    }
 
     ARRAY_FOR_EACH(interp->iter_vals, it) {
         if (it == list) {
@@ -5631,9 +5635,11 @@ static Julie_Status julie_builtin_insert(Julie_Interp *interp, Julie_Value *expr
         goto out;
     }
 
-    cpy = julie_force_copy(interp, val);
-    julie_free_value(interp, val);
-    val = cpy;
+    if (val->borrow_count > 0 || val->source_leaf) {
+        cpy = julie_force_copy(interp, val);
+        julie_free_value(interp, val);
+        val = cpy;
+    }
 
     ARRAY_FOR_EACH(interp->iter_vals, it) {
         if (it == list) {
@@ -6082,13 +6088,17 @@ static Julie_Status julie_builtin_pair(Julie_Interp *interp, Julie_Value *expr, 
         goto out;
     }
 
-    cpy = julie_force_copy(interp, first);
-    julie_free_value(interp, first);
-    first = cpy;
+    if (first->borrow_count > 0 || first->source_leaf) {
+        cpy = julie_force_copy(interp, first);
+        julie_free_value(interp, first);
+        first = cpy;
+    }
 
-    cpy = julie_force_copy(interp, second);
-    julie_free_value(interp, second);
-    second = cpy;
+    if (second->borrow_count > 0 || second->source_leaf) {
+        cpy = julie_force_copy(interp, second);
+        julie_free_value(interp, second);
+        second = cpy;
+    }
 
     list = julie_list_value(interp);
 
