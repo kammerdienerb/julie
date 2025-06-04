@@ -1530,7 +1530,7 @@ struct Julie_String_Struct {
     unsigned long long  hash;
 };
 
-#define JULIE_STRING_ID_HASH(_id) (((Julie_String*)id)->hash)
+#define JULIE_STRING_ID_HASH(_id) (((const Julie_String*)(_id))->hash)
 
 __attribute__((always_inline))
 static inline unsigned long long julie_string_id_hash(Julie_String_ID id) {
@@ -2650,6 +2650,26 @@ static inline void julie_pop_local_symtab(Julie_Interp *interp) {
     julie_free_symtab(interp, symtab);
 }
 
+static inline Julie_Value *julie_move_value_out_of_symtab(Julie_Interp *interp, hash_table(Julie_String_ID, Julie_Value_Ptr) symtab, Julie_String_ID name) {
+    Julie_Value **lookup;
+    Julie_Value  *value;
+
+    JULIE_ASSERT(!julie_symbol_starts_with_ampersand(interp, name));
+
+    lookup = hash_table_get_val_with_hash(symtab, name, JULIE_STRING_ID_HASH(name));
+
+    JULIE_ASSERT(lookup != NULL);
+
+    value = *lookup;
+
+    hash_table_delete(symtab, name);
+    julie_lookup_cache_del(interp, name);
+
+    julie_propagate_bc(value, 0);
+
+    return value;
+}
+
 __attribute__((always_inline))
 static inline Julie_Status _julie_bind_new(Julie_Interp                                  *interp,
                                            const Julie_String_ID                          name,
@@ -2741,7 +2761,7 @@ static inline Julie_Status _julie_bind(Julie_Interp *interp, const Julie_String_
         symtab = interp->global_symtab;
     }
 
-    lookup = hash_table_get_val(symtab, name);
+    lookup = hash_table_get_val_with_hash(symtab, name, JULIE_STRING_ID_HASH(name));
 
     if (lookup == NULL) {
         return _julie_bind_new(interp, name, valuep, symtab, lookup);
@@ -2763,7 +2783,7 @@ static inline Julie_Status _julie_unbind(Julie_Interp *interp, const Julie_Strin
         symtab = interp->global_symtab;
     }
 
-    lookup = hash_table_get_val(symtab, name);
+    lookup = hash_table_get_val_with_hash(symtab, name, JULIE_STRING_ID_HASH(name));
 
     if (lookup == NULL) {
         return JULIE_ERR_LOOKUP;
@@ -8406,7 +8426,7 @@ static Julie_Status julie_builtin_regex_match(Julie_Interp *interp, Julie_Value 
 
     rid = julie_value_string_id(interp, rs);
 
-    re = hash_table_get_val(interp->compiled_regex, rid);
+    re = hash_table_get_val_with_hash(interp->compiled_regex, rid, JULIE_STRING_ID_HASH(rid));
     if (re != NULL) { goto do_match; }
 
     err = regcomp(&new_re, rid->chars, REG_EXTENDED);
@@ -9003,6 +9023,7 @@ static Julie_Status _julie_invoke_with_cxt(Julie_Interp *interp, Julie_Apply_Con
     Julie_Value              *arg_sym;
     Julie_String_ID           id;
     Julie_Value              *val;
+    Julie_Value             **valp;
 
     status = JULIE_SUCCESS;
 
@@ -9148,7 +9169,27 @@ static Julie_Status _julie_invoke_with_cxt(Julie_Interp *interp, Julie_Apply_Con
                 if (i == julie_array_len(fn->list) - 1) {
                     if (ev->borrow_count == 0) {
                         *result = ev;
+                    } else if (ev->borrow_count == 1) {
+                        hash_table_traverse(julie_local_symtab(interp), id, valp) {
+                            if (*valp == ev) {
+                                if (julie_symbol_starts_with_ampersand(interp, id)) {
+                                    continue;
+                                }
+
+                                if (julie_borrows_outstanding(*valp)) {
+                                    goto copy_ret_val;
+                                }
+
+                                *result = julie_move_value_out_of_symtab(interp, julie_local_symtab(interp), id);
+
+                                JULIE_ASSERT(*result == ev);
+
+                                goto done_ev;
+                            }
+                        }
+                        goto copy_ret_val;
                     } else {
+copy_ret_val:;
                         *result = julie_force_copy(interp, ev);
                         julie_free_value(interp, ev);
                     }
@@ -9156,6 +9197,7 @@ static Julie_Status _julie_invoke_with_cxt(Julie_Interp *interp, Julie_Apply_Con
                     julie_free_value(interp, ev);
                 }
 
+done_ev:;
                 JULIE_UNBORROW(val);
             }
 
