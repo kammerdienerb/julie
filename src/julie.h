@@ -3932,6 +3932,7 @@ static Julie_Status julie_builtin_id(Julie_Interp *interp, Julie_Value *expr, un
             break;
         default:
             JULIE_ASSERT(0);
+            ev = NULL;
             break;
     }
 
@@ -5481,6 +5482,7 @@ static Julie_Status _julie_builtin_elem(Julie_Interp *interp, Julie_Value *expr,
         i = idx->uint;
     } else {
         JULIE_ASSERT(0 && "bad number type");
+        i = 0;
     }
 
     if (i >= julie_array_len(list->list)) {
@@ -5650,6 +5652,7 @@ static Julie_Status julie_builtin_insert(Julie_Interp *interp, Julie_Value *expr
         i = idx->uint;
     } else {
         JULIE_ASSERT(0 && "bad number type");
+        i = 0;
     }
 
     if (i > julie_array_len(list->list)) {
@@ -6735,6 +6738,7 @@ static Julie_Status julie_builtin_select(Julie_Interp *interp, Julie_Value *expr
         truth = !!cond->floating;
     } else {
         JULIE_ASSERT(0 && "bad number type");
+        truth = 0;
     }
 
 
@@ -6833,6 +6837,7 @@ static Julie_Status julie_builtin_if(Julie_Interp *interp, Julie_Value *expr, un
         truth = !!cond->floating;
     } else {
         JULIE_ASSERT(0 && "bad number type");
+        truth = 0;
     }
 
     if (truth) {
@@ -6915,6 +6920,7 @@ static Julie_Status julie_builtin_elif(Julie_Interp *interp, Julie_Value *expr, 
             truth = !!cond->floating;
         } else {
             JULIE_ASSERT(0 && "bad number type");
+            truth = 0;
         }
 
         if (truth) {
@@ -7048,6 +7054,7 @@ static Julie_Status julie_builtin_while(Julie_Interp *interp, Julie_Value *expr,
             cont = !!cond->floating;
         } else {
             JULIE_ASSERT(0 && "bad number type");
+            cont = 0;
         }
 
         julie_free_value(interp, cond);
@@ -8439,6 +8446,7 @@ static Julie_Status julie_builtin_substr(Julie_Interp *interp, Julie_Value *expr
         p = (long long)pos->uint;
     } else {
         JULIE_ASSERT(0 && "bad number type");
+        p = 0;
     }
 
     if (len->type == JULIE_SINT) {
@@ -8447,6 +8455,7 @@ static Julie_Status julie_builtin_substr(Julie_Interp *interp, Julie_Value *expr
         l = (long long)len->uint;
     } else {
         JULIE_ASSERT(0 && "bad number type");
+        l = 0;
     }
 
     cs = julie_value_cstring(s);
