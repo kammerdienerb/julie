@@ -1,36 +1,36 @@
 #ifndef __JULIE_H__
 #define __JULIE_H__
 
-#define _JULIE_STATUS                                                                                                                 \
-    _JULIE_STATUS_X(JULIE_SUCCESS,                             "No error.")                                                           \
-    _JULIE_STATUS_X(JULIE_ERR_UNEXPECTED_EOS,                  "Unexpected end of input.")                                            \
-    _JULIE_STATUS_X(JULIE_ERR_UNEXPECTED_TOK,                  "Unexpected token.")                                                   \
-    _JULIE_STATUS_X(JULIE_ERR_EXTRA_RPAREN,                    "Extraneous closing parenthesis.")                                     \
-    _JULIE_STATUS_X(JULIE_ERR_MISSING_RPAREN,                  "End of line while parentheses left open.")                            \
-    _JULIE_STATUS_X(JULIE_ERR_LOOKUP,                          "Failed to find symbol.")                                              \
-    _JULIE_STATUS_X(JULIE_ERR_BAD_APPLY,                       "Value is not something that can be applied in this way.")             \
-    _JULIE_STATUS_X(JULIE_ERR_ARITY,                           "Incorrect number of arguments.")                                      \
-    _JULIE_STATUS_X(JULIE_ERR_TYPE,                            "Incorrect argument type.")                                            \
-    _JULIE_STATUS_X(JULIE_ERR_NOT_PAIR,                        "List is not a pair.")                                                 \
-    _JULIE_STATUS_X(JULIE_ERR_BAD_INDEX,                       "Field or element not found.")                                         \
-    _JULIE_STATUS_X(JULIE_ERR_EVAL_CANCELLED,                  "Evaluation was cancelled.")                                           \
-    _JULIE_STATUS_X(JULIE_ERR_FILE_NOT_FOUND,                  "File not found.")                                                     \
-    _JULIE_STATUS_X(JULIE_ERR_FILE_IS_DIR,                     "File is a directory.")                                                \
-    _JULIE_STATUS_X(JULIE_ERR_MMAP_FAILED,                     "mmap() failed.")                                                      \
-    _JULIE_STATUS_X(JULIE_ERR_RELEASE_WHILE_BORROWED,          "Value released while a borrowed reference remains outstanding.")      \
-    _JULIE_STATUS_X(JULIE_ERR_REF_OF_TRANSIENT,                "References may only be taken to non-transient values.")               \
-    _JULIE_STATUS_X(JULIE_ERR_NOT_LVAL,                        "Result of expression is not assignable.")                             \
-    _JULIE_STATUS_X(JULIE_ERR_NOT_REF,                         "Value is not a reference.")                                           \
-    _JULIE_STATUS_X(JULIE_ERR_MODIFY_WHILE_ITER,               "Value modified while being iterated.")                                \
-    _JULIE_STATUS_X(JULIE_ERR_REF_OF_OBJECT_KEY,               "Taking references to object key values is not allowed.")              \
-    _JULIE_STATUS_X(JULIE_ERR_LOAD_PACKAGE_FAILURE,            "Failed to load package.")                                             \
-    _JULIE_STATUS_X(JULIE_ERR_USE_PACKAGE_FORBIDDEN,           "use-package has been disabled.")                                      \
-    _JULIE_STATUS_X(JULIE_ERR_ADD_PACKAGE_DIRECTORY_FORBIDDEN, "add-package-directory has been disabled.")                            \
-    _JULIE_STATUS_X(JULIE_ERR_INFIX,                           "infix function must be the middle expression of three.")              \
-    _JULIE_STATUS_X(JULIE_ERR_MUST_FOLLOW_IF,                  "This special-form function must follow `if` or `elif`.")              \
-    _JULIE_STATUS_X(JULIE_ERR_REST_MUST_BE_LAST,               "'...' may only be specified at the end of a parameter list.")         \
-    _JULIE_STATUS_X(JULIE_ERR_REGEX,                           "Regex error.")                                                        \
-    _JULIE_STATUS_X(JULIE_ERR_NO_CALLBACKS,                    "Callbacks are not enabled. Define JULIE_ENABLE_CALLBACKS to enable.")
+#define _JULIE_STATUS                                                                                                                           \
+    _JULIE_STATUS_X(JULIE_SUCCESS,                             "No error.")                                                                     \
+    _JULIE_STATUS_X(JULIE_ERR_UNEXPECTED_EOS,                  "Unexpected end of input.")                                                      \
+    _JULIE_STATUS_X(JULIE_ERR_UNEXPECTED_TOK,                  "Unexpected token.")                                                             \
+    _JULIE_STATUS_X(JULIE_ERR_EXTRA_RPAREN,                    "Extraneous closing parenthesis.")                                               \
+    _JULIE_STATUS_X(JULIE_ERR_MISSING_RPAREN,                  "End of line while parentheses left open.")                                      \
+    _JULIE_STATUS_X(JULIE_ERR_LOOKUP,                          "Failed to find symbol.")                                                        \
+    _JULIE_STATUS_X(JULIE_ERR_BAD_APPLY,                       "Value is not something that can be applied in this way.")                       \
+    _JULIE_STATUS_X(JULIE_ERR_ARITY,                           "Incorrect number of arguments.")                                                \
+    _JULIE_STATUS_X(JULIE_ERR_TYPE,                            "Incorrect argument type.")                                                      \
+    _JULIE_STATUS_X(JULIE_ERR_NOT_PAIR,                        "List is not a pair.")                                                           \
+    _JULIE_STATUS_X(JULIE_ERR_BAD_INDEX,                       "Field or element not found.")                                                   \
+    _JULIE_STATUS_X(JULIE_ERR_EVAL_CANCELLED,                  "Evaluation was cancelled.")                                                     \
+    _JULIE_STATUS_X(JULIE_ERR_FILE_NOT_FOUND,                  "File not found.")                                                               \
+    _JULIE_STATUS_X(JULIE_ERR_FILE_IS_DIR,                     "File is a directory.")                                                          \
+    _JULIE_STATUS_X(JULIE_ERR_MMAP_FAILED,                     "mmap() failed.")                                                                \
+    _JULIE_STATUS_X(JULIE_ERR_RELEASE_WHILE_BORROWED,          "Value released while a borrowed reference remains outstanding.")                \
+    _JULIE_STATUS_X(JULIE_ERR_REF_OF_TRANSIENT,                "References may only be taken to non-transient values.")                         \
+    _JULIE_STATUS_X(JULIE_ERR_NOT_LVAL,                        "Result of expression is not assignable.")                                       \
+    _JULIE_STATUS_X(JULIE_ERR_NOT_REF,                         "Value is not a reference.")                                                     \
+    _JULIE_STATUS_X(JULIE_ERR_MODIFY_WHILE_ITER,               "Value modified while being iterated.")                                          \
+    _JULIE_STATUS_X(JULIE_ERR_REF_OF_OBJECT_KEY,               "Taking references to object key values is not allowed.")                        \
+    _JULIE_STATUS_X(JULIE_ERR_LOAD_PACKAGE_FAILURE,            "Failed to load package.")                                                       \
+    _JULIE_STATUS_X(JULIE_ERR_USE_PACKAGE_FORBIDDEN,           "use-package has been disabled.")                                                \
+    _JULIE_STATUS_X(JULIE_ERR_ADD_PACKAGE_DIRECTORY_FORBIDDEN, "add-package-directory has been disabled.")                                      \
+    _JULIE_STATUS_X(JULIE_ERR_INFIX,                           "infix function must be the middle expression of three.")                        \
+    _JULIE_STATUS_X(JULIE_ERR_MUST_FOLLOW_IF,                  "This special-form function must follow `if` or `elif`.")                        \
+    _JULIE_STATUS_X(JULIE_ERR_REST_MUST_BE_LAST,               "'...' may only be specified at the end of a parameter list.")                   \
+    _JULIE_STATUS_X(JULIE_ERR_REGEX,                           "Regex error.")                                                                  \
+    _JULIE_STATUS_X(JULIE_ERR_NO_EVAL_CALLBACKS,               "Eval callbacks are not enabled. Define JULIE_ENABLE_EVAL_CALLBACKS to enable.")
 
 #define _JULIE_STATUS_X(e, s) e,
 typedef enum { _JULIE_STATUS } Julie_Status;
@@ -1376,10 +1376,10 @@ static void julie_store_free(Julie_Value *value) {
     }
 }
 
-// #define JULIE_NEW() (julie_store_alloc(&interp->store))
-#define JULIE_NEW() (calloc(1, sizeof(Julie_Value)))
-// #define JULIE_DEL(_value) (julie_store_free((_value)))
-#define JULIE_DEL(_value) (free((_value)))
+#define JULIE_NEW() (julie_store_alloc(&interp->store))
+// #define JULIE_NEW() (calloc(1, sizeof(Julie_Value)))
+#define JULIE_DEL(_value) (julie_store_free((_value)))
+// #define JULIE_DEL(_value) (free((_value)))
 
 
 Julie_Source_Value_Info *julie_get_source_value_info(Julie_Value *value) {
@@ -1423,9 +1423,9 @@ struct Julie_Closure_Info_Struct {
 #define JULIE_STRING_CACHE_SIZE (16)
 
 struct Julie_Interp_Struct {
-#ifdef JULIE_ENABLE_CALLBACKS
     Julie_Error_Callback                           error_callback;
     Julie_Output_Callback                          output_callback;
+#ifdef JULIE_ENABLE_EVAL_CALLBACKS
     Julie_Eval_Callback                            eval_callback;
     Julie_Post_Eval_Callback                       post_eval_callback;
 #endif
@@ -2502,15 +2502,11 @@ char *julie_to_string(Julie_Interp *interp, const Julie_Value *value, int flags)
 }
 
 static void julie_output(Julie_Interp *interp, const char *s, int n_bytes) {
-#ifdef JULIE_ENABLE_CALLBACKS
     if (interp->output_callback == NULL) {
         fwrite(s, 1, n_bytes, stdout);
     } else {
         interp->output_callback(s, n_bytes);
     }
-#else
-    fwrite(s, 1, n_bytes, stdout);
-#endif
 }
 
 static void julie_print(Julie_Interp *interp, Julie_Value *value, unsigned ind) {
@@ -2928,15 +2924,11 @@ static void julie_error(Julie_Interp *interp, Julie_Error_Info *info) {
         info->file_id = interp->cur_file_id;
     }
 
-#ifdef JULIE_ENABLE_CALLBACKS
     if (interp->error_callback != NULL) {
         interp->error_callback(info);
     } else {
         julie_free_error_info(info);
     }
-#else
-    julie_free_error_info(info);
-#endif
 }
 
 void julie_make_parse_error(Julie_Interp *interp, unsigned long long line, unsigned long long col, Julie_Status status) {
@@ -9457,7 +9449,7 @@ static Julie_Status julie_eval(Julie_Interp *interp, Julie_Value *value, Julie_V
 
     *result = NULL;
 
-#ifdef JULIE_ENABLE_CALLBACKS
+#ifdef JULIE_ENABLE_EVAL_CALLBACKS
     if (interp->eval_callback != NULL) {
         status = interp->eval_callback(value);
         if (status != JULIE_SUCCESS) {
@@ -9511,7 +9503,7 @@ copy:;
 
 out:;
 
-#ifdef JULIE_ENABLE_CALLBACKS
+#ifdef JULIE_ENABLE_EVAL_CALLBACKS
     if (interp->post_eval_callback != NULL && status == JULIE_SUCCESS) {
         status = interp->post_eval_callback(status, orig_value, result);
         if (status != JULIE_SUCCESS) {
@@ -9526,38 +9518,30 @@ out:;
 
 
 Julie_Status julie_set_error_callback(Julie_Interp *interp, Julie_Error_Callback cb) {
-#ifdef JULIE_ENABLE_CALLBACKS
     interp->error_callback = cb;
     return JULIE_SUCCESS;
-#else
-    return JULIE_ERR_NO_CALLBACKS;
-#endif
 }
 
 Julie_Status julie_set_output_callback(Julie_Interp *interp, Julie_Output_Callback cb) {
-#ifdef JULIE_ENABLE_CALLBACKS
     interp->output_callback = cb;
     return JULIE_SUCCESS;
-#else
-    return JULIE_ERR_NO_CALLBACKS;
-#endif
 }
 
 Julie_Status julie_set_eval_callback(Julie_Interp *interp, Julie_Eval_Callback cb) {
-#ifdef JULIE_ENABLE_CALLBACKS
+#ifdef JULIE_ENABLE_EVAL_CALLBACKS
     interp->eval_callback = cb;
     return JULIE_SUCCESS;
 #else
-    return JULIE_ERR_NO_CALLBACKS;
+    return JULIE_ERR_NO_EVAL_CALLBACKS;
 #endif
 }
 
 Julie_Status julie_set_post_eval_callback(Julie_Interp *interp, Julie_Post_Eval_Callback cb) {
-#ifdef JULIE_ENABLE_CALLBACKS
+#ifdef JULIE_ENABLE_EVAL_CALLBACKS
     interp->post_eval_callback = cb;
     return JULIE_SUCCESS;
 #else
-    return JULIE_ERR_NO_CALLBACKS;
+    return JULIE_ERR_NO_EVAL_CALLBACKS;
 #endif
 }
 
