@@ -1375,10 +1375,10 @@ static void julie_store_free(Julie_Value *value) {
     }
 }
 
-#define JULIE_NEW() (julie_store_alloc(&interp->store))
-// #define JULIE_NEW() (calloc(1, sizeof(Julie_Value)))
-#define JULIE_DEL(_value) (julie_store_free((_value)))
-// #define JULIE_DEL(_value) (free((_value)))
+// #define JULIE_NEW() (julie_store_alloc(&interp->store))
+#define JULIE_NEW() (calloc(1, sizeof(Julie_Value)))
+// #define JULIE_DEL(_value) (julie_store_free((_value)))
+#define JULIE_DEL(_value) (free((_value)))
 
 
 Julie_Source_Value_Info *julie_get_source_value_info(Julie_Value *value) {
@@ -6416,9 +6416,18 @@ static Julie_Status julie_builtin_get_or_insert_field(Julie_Interp *interp, Juli
     Julie_Value  *val;
     Julie_Value  *it;
     Julie_Value  *lookup;
-    Julie_Value  *ev;
 
-    status = julie_args(interp, expr, "ok-*", n_values, values, &o, &key, &val);
+    *result = NULL;
+
+    status = JULIE_SUCCESS;
+
+    if (n_values != 3) {
+        status = JULIE_ERR_ARITY;
+        julie_make_arity_error(interp, expr, 3, n_values, 0);
+        goto out;
+    }
+
+    status = julie_eval(interp, values[0], &o);
     if (status != JULIE_SUCCESS) {
         *result = NULL;
         goto out;
@@ -6433,6 +6442,19 @@ static Julie_Status julie_builtin_get_or_insert_field(Julie_Interp *interp, Juli
         }
     }
 
+    status = julie_eval(interp, values[1], &key);
+    if (status != JULIE_SUCCESS) {
+        *result = NULL;
+        goto out_free;
+    }
+
+    if (!JULIE_TYPE_IS_KEYLIKE(key->type)) {
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[1], _JULIE_KEYLIKE, key->type);
+        julie_free_value(interp, key);
+        goto out_free;
+    }
+
     lookup = julie_object_get_field(o, key);
 
     if (lookup != NULL) {
@@ -6440,20 +6462,22 @@ static Julie_Status julie_builtin_get_or_insert_field(Julie_Interp *interp, Juli
         goto out_free;
     }
 
-    status = julie_eval(interp, val, &ev);
+
+    status = julie_eval(interp, values[2], &val);
     if (status != JULIE_SUCCESS) {
         *result = NULL;
+        julie_free_value(interp, key);
         goto out_free;
     }
 
     if (key->borrow_count > 0 || key->source_leaf) {
         key = julie_force_copy(interp, key);
     }
-    if (ev->borrow_count > 0 || ev->source_leaf) {
-        ev = julie_force_copy(interp, ev);
+    if (val->borrow_count > 0 || val->source_leaf) {
+        val = julie_force_copy(interp, val);
     }
 
-    if ((status = julie_object_insert_field_skip_lookup(interp, o, key, ev, result)) != JULIE_SUCCESS) {
+    if ((status = julie_object_insert_field_skip_lookup(interp, o, key, val, result)) != JULIE_SUCCESS) {
         *result = NULL;
         if (status == JULIE_ERR_RELEASE_WHILE_BORROWED) {
             julie_make_bind_error(interp, expr, JULIE_ERR_RELEASE_WHILE_BORROWED, NULL);
@@ -6462,7 +6486,7 @@ static Julie_Status julie_builtin_get_or_insert_field(Julie_Interp *interp, Juli
         }
         julie_make_bind_error(interp, expr, JULIE_ERR_RELEASE_WHILE_BORROWED, NULL);
         julie_free_value(interp, key);
-        julie_free_value(interp, ev);
+        julie_free_value(interp, val);
         goto out_free;
     }
 
