@@ -6453,7 +6453,7 @@ static Julie_Status julie_builtin_get_or_insert_field(Julie_Interp *interp, Juli
         ev = julie_force_copy(interp, ev);
     }
 
-    if ((status = julie_object_insert_field_skip_lookup(interp, o, key, ev, NULL)) != JULIE_SUCCESS) {
+    if ((status = julie_object_insert_field_skip_lookup(interp, o, key, ev, result)) != JULIE_SUCCESS) {
         *result = NULL;
         if (status == JULIE_ERR_RELEASE_WHILE_BORROWED) {
             julie_make_bind_error(interp, expr, JULIE_ERR_RELEASE_WHILE_BORROWED, NULL);
