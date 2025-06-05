@@ -6,4 +6,4 @@ CFLAGS="-Isrc -rdynamic -O3 -march=native -mtune=native -g -DJULIE_ASSERTIONS=0"
 LDFLAGS="-ldl -lm"
 
 echo "CC julie"
-clang -o julie src/driver.c ${CFLAGS} ${LDFLAGS} || exit $?
+gcc -o julie src/driver.c ${CFLAGS} ${LDFLAGS} || exit $?

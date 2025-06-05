@@ -1476,6 +1476,8 @@ static Julie_Apply_Context *julie_push_cxt(Julie_Interp *interp, Julie_Value *va
 
     interp->apply_depth += 1;
 
+    JULIE_ARRAY_PUSH(interp->value_stack, value);
+
     if (unlikely(interp->apply_depth > julie_array_len(interp->apply_contexts))) {
         cxt = malloc(sizeof(*cxt));
         cxt->args = JULIE_ARRAY_INIT;
@@ -1483,8 +1485,6 @@ static Julie_Apply_Context *julie_push_cxt(Julie_Interp *interp, Julie_Value *va
     } else {
         cxt = julie_array_elem(interp->apply_contexts, interp->apply_depth - 1);
     }
-
-    JULIE_ARRAY_PUSH(interp->value_stack, value);
 
     return cxt;
 }
@@ -1524,10 +1524,17 @@ Julie_Source_Value_Info *julie_get_top_source_value_info(Julie_Interp *interp) {
 }
 
 
+enum {
+    _JULIE_STRING_NO_TAG,
+    JULIE_STRING_AMPERSAND,
+    JULIE_STRING_QUOTE,
+};
+
 struct Julie_String_Struct {
     char               *chars;
     unsigned long long  len;
     unsigned long long  hash;
+    unsigned            tag;
 };
 
 #define JULIE_STRING_ID_HASH(_id) (((const Julie_String*)(_id))->hash)
@@ -1550,6 +1557,16 @@ Julie_String_ID julie_get_string_id(Julie_Interp *interp, const char *s) {
         newstring->len   = len;
         newstring->chars = strdup(s);
         newstring->hash  = julie_charptr_hash(newstring->chars);
+        newstring->tag   = _JULIE_STRING_NO_TAG;
+
+        if (newstring->len >= 2) {
+            if (newstring->chars[0] == '&') {
+                newstring->tag = JULIE_STRING_AMPERSAND;
+            } else if (newstring->chars[0] == '\'') {
+                newstring->tag = JULIE_STRING_QUOTE;
+            }
+        }
+
         lookup = hash_table_insert(interp->strings, newstring->chars, newstring);
         JULIE_ASSERT(lookup != NULL);
     }
@@ -1590,11 +1607,11 @@ const char *julie_value_cstring(const Julie_Value *value) {
 
 Julie_String_ID julie_value_string_id(Julie_Interp *interp, const Julie_Value *value) {
     JULIE_ASSERT(value->type == JULIE_STRING || value->type == JULIE_SYMBOL);
-    if (value->tag == JULIE_STRING_TYPE_EMBED) {
-        return julie_get_string_id(interp, value->embedded_string_bytes);
-    }
     if (value->tag == JULIE_STRING_TYPE_INTERN) {
         return value->string_id;
+    }
+    if (value->tag == JULIE_STRING_TYPE_EMBED) {
+        return julie_get_string_id(interp, value->embedded_string_bytes);
     }
     if (value->tag == JULIE_STRING_TYPE_MALLOC) {
         return julie_get_string_id(interp, value->cstring);
@@ -2521,17 +2538,11 @@ static void julie_print(Julie_Interp *interp, Julie_Value *value, unsigned ind) 
  *********************************************************/
 
 static int julie_symbol_starts_with_ampersand(Julie_Interp *interp, const Julie_String_ID id) {
-    const Julie_String *s;
-
-    s  = julie_get_string(interp, id);
-    return s->len >= 2 && s->chars[0] == '&';
+    return julie_get_string(interp, id)->tag == JULIE_STRING_AMPERSAND;
 }
 
 static int julie_symbol_starts_with_single_quote(Julie_Interp *interp, const Julie_String_ID id) {
-    const Julie_String *s;
-
-    s  = julie_get_string(interp, id);
-    return s->len >= 2 && s->chars[0] == '\'';
+    return julie_get_string(interp, id)->tag == JULIE_STRING_QUOTE;
 }
 
 __attribute__ ((__pure__))
@@ -3986,9 +3997,7 @@ static Julie_Status _julie_builtin_assign(Julie_Interp *interp, Julie_Value *exp
     if (status != JULIE_SUCCESS) { goto out; }
 
     if (l->type == JULIE_SYMBOL) {
-        id = l->tag == JULIE_STRING_TYPE_INTERN
-                ? l->string_id
-                : julie_get_string_id(interp, julie_value_cstring(l));
+        id = julie_value_string_id(interp, l);
 
         if (global || julie_array_len(interp->local_symtab_stack) == 0) {
             status = julie_bind(interp, id, &rval);
@@ -4061,9 +4070,7 @@ static Julie_Status julie_builtin_unref(Julie_Interp *interp, Julie_Value *expr,
         goto out;
     }
 
-    id = sym->tag == JULIE_STRING_TYPE_INTERN
-            ? sym->string_id
-            : julie_get_string_id(interp, julie_value_cstring(sym));
+    id = julie_value_string_id(interp, sym);
 
     if (!julie_symbol_starts_with_ampersand(interp, id)) {
         status = JULIE_ERR_NOT_REF;
@@ -4127,9 +4134,7 @@ static Julie_Status julie_builtin_is_bound(Julie_Interp *interp, Julie_Value *ex
         goto out;
     }
 
-    id = sym->tag == JULIE_STRING_TYPE_INTERN
-            ? sym->string_id
-            : julie_get_string_id(interp, julie_value_cstring(sym));
+    id = julie_value_string_id(interp, sym);
 
     lookup = julie_lookup(interp, id);
 
@@ -7057,9 +7062,7 @@ static Julie_Status julie_builtin_repeat(Julie_Interp *interp, Julie_Value *expr
 
     julie_free_value(interp, n);
 
-    id = sym->tag == JULIE_STRING_TYPE_INTERN
-            ? sym->string_id
-            : julie_get_string_id(interp, julie_value_cstring(sym));
+    id = julie_value_string_id(interp, sym);
 
     it = NULL;
     for (i = 0; i < times; i += 1) {
@@ -7162,9 +7165,7 @@ static Julie_Status julie_builtin_foreach(Julie_Interp *interp, Julie_Value *exp
         goto out;
     }
 
-    id = sym->tag == JULIE_STRING_TYPE_INTERN ?
-            sym->string_id :
-            julie_get_string_id(interp, julie_value_cstring(sym));
+    id = julie_value_string_id(interp, sym);
 
     _container = values[1];
 
@@ -7911,7 +7912,7 @@ static void _julie_collect_lambda_free_variables(Julie_Interp *interp, Julie_Val
             first = julie_array_elem(expr->list, 0);
 
             if (first->type == JULIE_SYMBOL
-            &&  ((id = first->tag == JULIE_STRING_TYPE_INTERN ? first->string_id : julie_get_string_id(interp, julie_value_cstring(first))), 1)
+            &&  ((id = julie_value_string_id(interp, first)), 1)
             &&  (   id == julie_get_string_id(interp, "lambda")
                 ||  id == julie_get_string_id(interp, "fn")
                 ||  id == julie_get_string_id(interp, "'"))) {
@@ -7992,9 +7993,7 @@ static Julie_Status julie_builtin_lambda(Julie_Interp *interp, Julie_Value *expr
     _julie_collect_lambda_free_variables(interp, values[n_values == 2], bounds, &frees);
 
     ARRAY_FOR_EACH(frees, it) {
-        id = it->tag == JULIE_STRING_TYPE_INTERN
-                ? it->string_id
-                : julie_get_string_id(interp, julie_value_cstring(it));
+        id = julie_value_string_id(interp, it);
         lookup = julie_lookup(interp, id);
         if (lookup != NULL) {
             hash_table_insert(closure->captures, id, julie_force_copy(interp, lookup));
@@ -9287,7 +9286,10 @@ static Julie_Status julie_apply(Julie_Interp *interp, Julie_Value *list, Julie_V
     cxt = julie_push_cxt(interp, list);
 
     /* Set up backtrace frame. */
-    source_info = julie_get_top_source_value_info(interp);
+    source_info = julie_get_source_value_info(list);
+    if (unlikely(source_info == NULL)) {
+        source_info = julie_get_top_source_value_info(interp);
+    }
     if (source_info != NULL) {
         cxt->bt_entry.file_id = source_info->file_id;
         cxt->bt_entry.line    = source_info->line;
@@ -9307,9 +9309,8 @@ static Julie_Status julie_apply(Julie_Interp *interp, Julie_Value *list, Julie_V
         maybe_infix_fn = julie_array_elem(list->list, 1);
 
         if (likely(maybe_infix_fn->type == JULIE_SYMBOL)) {
-            id = maybe_infix_fn->tag == JULIE_STRING_TYPE_INTERN
-                    ? maybe_infix_fn->string_id
-                    : julie_get_string_id(interp, julie_value_cstring(maybe_infix_fn));
+            id = julie_value_string_id(interp, maybe_infix_fn);
+
             if (likely(!julie_symbol_starts_with_single_quote(interp, id))) {
                 lookup = julie_lookup(interp, id);
                 if (lookup != NULL && lookup->tag == JULIE_INFIX_FN) {
@@ -9379,55 +9380,53 @@ static Julie_Status julie_eval(Julie_Interp *interp, Julie_Value *value, Julie_V
     Julie_Value        *orig_value;
     Julie_Value        *first;
     Julie_String_ID     id;
-    Julie_Value        *lookup;
 
     status = JULIE_SUCCESS;
 
     *result = NULL;
 
-    if (interp->eval_callback != NULL) {
-        status = interp->eval_callback(value);
-        if (status != JULIE_SUCCESS) {
-            julie_make_interp_error(interp, value, status);
-            goto out;
-        }
-    }
+//     if (interp->eval_callback != NULL) {
+//         status = interp->eval_callback(value);
+//         if (status != JULIE_SUCCESS) {
+//             julie_make_interp_error(interp, value, status);
+//             goto out;
+//         }
+//     }
 
     orig_value = value;
 
     if (value->type == JULIE_LIST) {
         list_len = julie_array_len(value->list);
-        if (list_len == 1) {
-            first = julie_array_elem(value->list, 0);
 
-            if (JULIE_TYPE_IS_NUMBER(first->type)
-            ||  first->type == JULIE_STRING
-            ||  first->type == JULIE_NIL) {
+        if (list_len <= 1) {
+            if (list_len == 1) {
+                first = julie_array_elem(value->list, 0);
 
-                value = first;
+                if (JULIE_TYPE_IS_NUMBER(first->type)
+                ||  first->type == JULIE_STRING
+                ||  first->type == JULIE_NIL) {
+
+                    value = first;
+                    goto copy;
+                }
+            } else if (list_len == 0) {
+                value = julie_nil_value(interp);
                 goto copy;
             }
-        } else if (list_len == 0) {
-            value = julie_nil_value(interp);
-            goto copy;
         }
 
         status = julie_apply(interp, value, result);
 
     } else {
         if (value->type == JULIE_SYMBOL) {
-            id = value->tag == JULIE_STRING_TYPE_INTERN
-                    ? value->string_id
-                    : julie_get_string_id(interp, julie_value_cstring(value));
+            id = julie_value_string_id(interp, value);
 
             if (!julie_symbol_starts_with_single_quote(interp, id)) {
-                if (unlikely((lookup = julie_lookup(interp, id)) == NULL)) {
+                if (unlikely((value = julie_lookup(interp, id)) == NULL)) {
                     status = JULIE_ERR_LOOKUP;
-                    julie_make_lookup_error(interp, value, id);
+                    julie_make_lookup_error(interp, orig_value, id);
                     goto out;
                 }
-
-                value = lookup;
             }
         }
 
@@ -9436,14 +9435,13 @@ copy:;
     }
 
 out:;
-
-    if (interp->post_eval_callback != NULL && status == JULIE_SUCCESS) {
-        status = interp->post_eval_callback(status, orig_value, result);
-        if (status != JULIE_SUCCESS) {
-            julie_make_interp_error(interp, orig_value, status);
-            goto out;
-        }
-    }
+//     if (interp->post_eval_callback != NULL && status == JULIE_SUCCESS) {
+//         status = interp->post_eval_callback(status, orig_value, result);
+//         if (status != JULIE_SUCCESS) {
+//             julie_make_interp_error(interp, orig_value, status);
+//             goto out;
+//         }
+//     }
 
     return status;
 }
