@@ -1376,10 +1376,10 @@ static void julie_store_free(Julie_Value *value) {
     }
 }
 
-#define JULIE_NEW() (julie_store_alloc(&interp->store))
-// #define JULIE_NEW() (calloc(1, sizeof(Julie_Value)))
-#define JULIE_DEL(_value) (julie_store_free((_value)))
-// #define JULIE_DEL(_value) (free((_value)))
+// #define JULIE_NEW() (julie_store_alloc(&interp->store))
+#define JULIE_NEW() (calloc(1, sizeof(Julie_Value)))
+// #define JULIE_DEL(_value) (julie_store_free((_value)))
+#define JULIE_DEL(_value) (free((_value)))
 
 
 Julie_Source_Value_Info *julie_get_source_value_info(Julie_Value *value) {
@@ -2052,6 +2052,8 @@ Julie_Status julie_object_delete_field(Julie_Interp *interp, Julie_Value *object
     }
 
     real_key = *lookup;
+
+    JULIE_ASSERT(real_key != key);
 
     val = *hash_table_get_val((_Julie_Object)object->object, real_key);
 
@@ -6311,7 +6313,7 @@ static Julie_Status julie_builtin_delete(Julie_Interp *interp, Julie_Value *expr
         julie_free_value(interp, object);
         julie_free_value(interp, key);
         goto out;
-    } else {
+    } else if (status != JULIE_SUCCESS) {
         JULIE_ASSERT(0);
     }
 
