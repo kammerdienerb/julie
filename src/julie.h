@@ -1375,10 +1375,10 @@ static void julie_store_free(Julie_Value *value) {
     }
 }
 
-// #define JULIE_NEW() (julie_store_alloc(&interp->store))
-#define JULIE_NEW() (calloc(1, sizeof(Julie_Value)))
-// #define JULIE_DEL(_value) (julie_store_free((_value)))
-#define JULIE_DEL(_value) (free((_value)))
+#define JULIE_NEW() (julie_store_alloc(&interp->store))
+// #define JULIE_NEW() (calloc(1, sizeof(Julie_Value)))
+#define JULIE_DEL(_value) (julie_store_free((_value)))
+// #define JULIE_DEL(_value) (free((_value)))
 
 
 Julie_Source_Value_Info *julie_get_source_value_info(Julie_Value *value) {
