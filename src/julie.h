@@ -1697,7 +1697,8 @@ typedef hash_table(Julie_Value_Ptr, Julie_Value_Ptr) _Julie_Object;
 
 static Julie_Value *_julie_copy_real(Julie_Interp *interp, Julie_Value *value, int force);
 
-static Julie_Value *_julie_copy(Julie_Interp *interp, Julie_Value *value, int force) {
+__attribute__((always_inline))
+static inline Julie_Value *_julie_copy(Julie_Interp *interp, Julie_Value *value, int force) {
     if ((value->borrow_count | (value->source_node)) && !force) { return value; }
 
     return _julie_copy_real(interp, value, force);
@@ -1786,7 +1787,8 @@ static Julie_Value *julie_force_copy(Julie_Interp *interp, Julie_Value *value) {
 
 static void _julie_free_value_real(Julie_Interp * interp, Julie_Value *value, int free_root, int force);
 
-static void _julie_free_value(Julie_Interp * interp, Julie_Value *value, int free_root, int force) {
+__attribute__((always_inline))
+static inline void _julie_free_value(Julie_Interp * interp, Julie_Value *value, int free_root, int force) {
 
     JULIE_ASSERT(free_root || value->borrow_count == 0);
 
