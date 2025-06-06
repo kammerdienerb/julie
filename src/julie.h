@@ -1426,7 +1426,7 @@ struct Julie_Closure_Info_Struct {
 };
 
 
-#define JULIE_LOOKUP_CACHE_SIZE (12)
+#define JULIE_LOOKUP_CACHE_SIZE (32)
 #define JULIE_STRING_CACHE_SIZE (16)
 
 #define JULIE_SINT_VALUE_CACHE_SIZE (256)
@@ -1453,7 +1453,9 @@ struct Julie_Interp_Struct {
     hash_table(Julie_String_ID, Julie_Value_Ptr)   global_symtab;
     Julie_Array                                   *local_symtab_stack;
     unsigned                                       lookup_cache_idx;
+    __attribute__((aligned(32)))
     Julie_String_ID                                lookup_cache_syms[JULIE_LOOKUP_CACHE_SIZE];
+    __attribute__((aligned(32)))
     Julie_Value                                   *lookup_cache_vals[JULIE_LOOKUP_CACHE_SIZE];
 
     Julie_Array                                   *roots;
@@ -2626,9 +2628,10 @@ static int julie_symbol_starts_with_single_quote(Julie_Interp *interp, const Jul
     return julie_get_string(interp, id)->tag == JULIE_STRING_QUOTE;
 }
 
-__attribute__ ((__pure__))
-static Julie_Value *julie_lookup_cache_search(const Julie_Interp *interp, const Julie_String_ID sym) {
-    unsigned i;
+static Julie_Value *julie_lookup_cache_search(const Julie_Interp * restrict interp, const Julie_String_ID sym) {
+    const Julie_String_ID *const  restrict syms = __builtin_assume_aligned(interp->lookup_cache_syms, 32);
+    Julie_Value           *const *restrict vals = __builtin_assume_aligned(interp->lookup_cache_vals, 32);
+    unsigned long long                     i;
 
     for (i = 0; i < JULIE_LOOKUP_CACHE_SIZE; i += 1) {
         if (interp->lookup_cache_syms[i] == sym) {
