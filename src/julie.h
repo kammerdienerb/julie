@@ -358,7 +358,9 @@ const char *julie_type_string(Julie_Type type);
 #define hash_table_get_val(t, k) ((t)->_get_val((t), (k)))
 #define hash_table_get_val_with_hash(t, k, h) ((t)->_get_val_with_hash((t), (k), (h)))
 #define hash_table_insert(t, k, v) ((t)->_insert((t), (k), (v)))
+#define hash_table_insert_with_hash(t, k, v, h) ((t)->_insert_with_hash((t), (k), (v), (h)))
 #define hash_table_delete(t, k) ((t)->_delete((t), (k)))
+#define hash_table_delete_with_hash(t, k, h) ((t)->_delete_with_hash((t), (k), (h)))
 #define hash_table_traverse(t, key, val_ptr)                         \
     for (/* vars */                                                  \
          uint64_t __i    = 0,                                        \
@@ -444,17 +446,21 @@ const char *julie_type_string(Julie_Type type);
     typedef void (*CAT2(hash_table(K_T, V_T), _free_t))                                      \
         (struct _hash_table(K_T, V_T) *);                                                    \
     typedef K_T* (*CAT2(hash_table(K_T, V_T), _get_key_t))                                   \
-        (struct _hash_table(K_T, V_T) *, K_T);                                               \
+        (struct _hash_table(K_T, V_T) *, const K_T);                                         \
     typedef V_T* (*CAT2(hash_table(K_T, V_T), _get_val_t))                                   \
-        (struct _hash_table(K_T, V_T) *, K_T);                                               \
+        (struct _hash_table(K_T, V_T) *, const K_T);                                         \
     typedef V_T* (*CAT2(hash_table(K_T, V_T), _get_val_with_hash_t))                         \
-        (struct _hash_table(K_T, V_T) *, K_T, uint64_t);                                     \
+        (struct _hash_table(K_T, V_T) *, const K_T, const uint64_t);                         \
     typedef V_T* (*CAT2(hash_table(K_T, V_T), _insert_t))                                    \
-        (struct _hash_table(K_T, V_T) *, K_T, V_T);                                          \
+        (struct _hash_table(K_T, V_T) *, const K_T, const V_T);                              \
+    typedef V_T* (*CAT2(hash_table(K_T, V_T), _insert_with_hash_t))                          \
+        (struct _hash_table(K_T, V_T) *, const K_T, const V_T, const uint64_t);              \
     typedef int (*CAT2(hash_table(K_T, V_T), _delete_t))                                     \
-        (struct _hash_table(K_T, V_T) *, K_T);                                               \
-    typedef unsigned long long (*CAT2(hash_table(K_T, V_T), _hash_t))(K_T);                  \
-    typedef int (*CAT2(hash_table(K_T, V_T), _equ_t))(K_T, K_T);                             \
+        (struct _hash_table(K_T, V_T) *, const K_T);                                         \
+    typedef int (*CAT2(hash_table(K_T, V_T), _delete_with_hash_t))                           \
+        (struct _hash_table(K_T, V_T) *, const K_T, const uint64_t);                         \
+    typedef unsigned long long (*CAT2(hash_table(K_T, V_T), _hash_t))(const K_T);            \
+    typedef int (*CAT2(hash_table(K_T, V_T), _equ_t))(const K_T, const K_T);                 \
                                                                                              \
     typedef struct _hash_table(K_T, V_T) {                                                   \
         hash_table_slot(K_T, V_T) *_data;                                                    \
@@ -466,7 +472,9 @@ const char *julie_type_string(Julie_Type type);
         CAT2(hash_table(K_T, V_T), _get_val_t)           const _get_val;                     \
         CAT2(hash_table(K_T, V_T), _get_val_with_hash_t) const _get_val_with_hash;           \
         CAT2(hash_table(K_T, V_T), _insert_t)            const _insert;                      \
+        CAT2(hash_table(K_T, V_T), _insert_with_hash_t)  const _insert_with_hash;            \
         CAT2(hash_table(K_T, V_T), _delete_t)            const _delete;                      \
+        CAT2(hash_table(K_T, V_T), _delete_with_hash_t)  const _delete_with_hash;            \
         CAT2(hash_table(K_T, V_T), _hash_t)              const _hash;                        \
         CAT2(hash_table(K_T, V_T), _equ_t)               const _equ;                         \
     }                                                                                        \
@@ -474,7 +482,9 @@ const char *julie_type_string(Julie_Type type);
                                                                                              \
     /* hash_table slot */                                                                    \
     static inline hash_table_slot(K_T, V_T)                                                  \
-        CAT2(hash_table_slot(K_T, V_T), _make)(K_T key, V_T val, uint64_t hash) {            \
+        CAT2(hash_table_slot(K_T, V_T), _make)                                               \
+        (const K_T key, const V_T val, const uint64_t hash) {                                \
+                                                                                             \
         hash_table_slot(K_T, V_T) slot = malloc(sizeof(*slot));                              \
                                                                                              \
         slot->_key  = key;                                                                   \
@@ -544,11 +554,12 @@ const char *julie_type_string(Julie_Type type);
     }                                                                                        \
                                                                                              \
     static inline V_T*                                                                       \
-        CAT2(hash_table(K_T, V_T), _insert)(hash_table(K_T, V_T) t, K_T key, V_T val) {      \
-        uint64_t h, data_size, idx;                                                          \
+        CAT2(hash_table(K_T, V_T), _insert_with_hash)                                        \
+        (hash_table(K_T, V_T) t, const K_T key, const V_T val, const uint64_t h) {           \
+                                                                                             \
+        uint64_t data_size, idx;                                                             \
         hash_table_slot(K_T, V_T) slot, *slot_ptr;                                           \
                                                                                              \
-        h         = t->_hash(key);                                                           \
         data_size = t->prime_sizes[t->_size_idx];                                            \
         idx       = h % data_size;                                                           \
         slot_ptr  = t->_data + idx;                                                          \
@@ -584,13 +595,19 @@ out:;                                                                           
         return &((*slot_ptr)->_val);                                                         \
     }                                                                                        \
                                                                                              \
-    static inline int CAT2(hash_table(K_T, V_T), _delete)                                    \
-        (hash_table(K_T, V_T) t, K_T key) {                                                  \
+    static inline V_T*                                                                       \
+        CAT2(hash_table(K_T, V_T), _insert)                                                  \
+        (hash_table(K_T, V_T) t, const K_T key, const V_T val) {                             \
                                                                                              \
-        uint64_t h, data_size, idx;                                                          \
+        return CAT2(hash_table(K_T, V_T), _insert_with_hash)(t, key, val, t->_hash(key));    \
+    }                                                                                        \
+                                                                                             \
+    static inline int CAT2(hash_table(K_T, V_T), _delete_with_hash)                          \
+        (hash_table(K_T, V_T) t, const K_T key, const uint64_t h) {                          \
+                                                                                             \
+        uint64_t data_size, idx;                                                             \
         hash_table_slot(K_T, V_T) slot, prev, *slot_ptr;                                     \
                                                                                              \
-        h = t->_hash(key);                                                                   \
         data_size = t->prime_sizes[t->_size_idx];                                            \
         idx = h % data_size;                                                                 \
         slot_ptr = t->_data + idx;                                                           \
@@ -617,8 +634,13 @@ out:;                                                                           
         return 0;                                                                            \
     }                                                                                        \
                                                                                              \
+    static inline int CAT2(hash_table(K_T, V_T), _delete)                                    \
+        (hash_table(K_T, V_T) t, const K_T key) {                                            \
+        return CAT2(hash_table(K_T, V_T), _delete_with_hash)(t, key, t->_hash(key));         \
+    }                                                                                        \
+                                                                                             \
     static inline K_T*                                                                       \
-        CAT2(hash_table(K_T, V_T), _get_key)(hash_table(K_T, V_T) t, K_T key) {              \
+        CAT2(hash_table(K_T, V_T), _get_key)(hash_table(K_T, V_T) t, const K_T key) {        \
                                                                                              \
         uint64_t h, data_size, idx;                                                          \
         hash_table_slot(K_T, V_T) slot, *slot_ptr;                                           \
@@ -640,8 +662,8 @@ out:;                                                                           
                                                                                              \
     static inline V_T*                                                                       \
         CAT2(hash_table(K_T, V_T), _get_val_with_hash)(hash_table(K_T, V_T) t,               \
-                                                       K_T key,                              \
-                                                       uint64_t h) {                         \
+                                                       const K_T key,                        \
+                                                       const uint64_t h) {                   \
                                                                                              \
         uint64_t data_size, idx;                                                             \
         hash_table_slot(K_T, V_T) slot, *slot_ptr;                                           \
@@ -661,7 +683,7 @@ out:;                                                                           
     }                                                                                        \
                                                                                              \
     static inline V_T*                                                                       \
-        CAT2(hash_table(K_T, V_T), _get_val)(hash_table(K_T, V_T) t, K_T key) {              \
+        CAT2(hash_table(K_T, V_T), _get_val)(hash_table(K_T, V_T) t, const K_T key) {        \
         return CAT2(hash_table(K_T, V_T), _get_val_with_hash)(t, key, t->_hash(key));        \
     }                                                                                        \
                                                                                              \
@@ -686,9 +708,7 @@ out:;                                                                           
         uint64_t data_size                                                                   \
             =   CAT2(hash_table(K_T, V_T), _prime_sizes)[DEFAULT_START_SIZE_IDX]             \
               * sizeof(hash_table_slot(K_T, V_T));                                           \
-        hash_table_slot(K_T, V_T) *the_data = malloc(data_size);                             \
-                                                                                             \
-        memset(the_data, 0, data_size);                                                      \
+        hash_table_slot(K_T, V_T) *the_data = calloc(1, data_size);                          \
                                                                                              \
         struct _hash_table(K_T, V_T)                                                         \
             init                        = {._size_idx = DEFAULT_START_SIZE_IDX,              \
@@ -700,7 +720,9 @@ out:;                                                                           
                     ._get_val           = CAT2(hash_table(K_T, V_T), _get_val),              \
                     ._get_val_with_hash = CAT2(hash_table(K_T, V_T), _get_val_with_hash),    \
                     ._insert            = CAT2(hash_table(K_T, V_T), _insert),               \
+                    ._insert_with_hash  = CAT2(hash_table(K_T, V_T), _insert_with_hash),     \
                     ._delete            = CAT2(hash_table(K_T, V_T), _delete),               \
+                    ._delete_with_hash  = CAT2(hash_table(K_T, V_T), _delete_with_hash),     \
                     ._equ               = (CAT2(hash_table(K_T, V_T), _equ_t))equ,           \
                     ._hash              = (CAT2(hash_table(K_T, V_T), _hash_t))hash};        \
                                                                                              \
@@ -712,14 +734,84 @@ out:;                                                                           
     }                                                                                        \
 
 
+// small, fast 64 bit hash function (version 2).
+//
+// https://github.com/N-R-K/ChibiHash
+//
+// This is free and unencumbered software released into the public domain.
+// For more information, please refer to <https://unlicense.org/>
+#include <stdint.h>
+#include <stddef.h>
+
+static inline uint64_t chibihash64__load32le(const uint8_t *p) {
+    return (uint64_t)p[0] <<  0 | (uint64_t)p[1] <<  8 |
+           (uint64_t)p[2] << 16 | (uint64_t)p[3] << 24;
+}
+
+static inline uint64_t chibihash64__load64le(const uint8_t *p) {
+    return chibihash64__load32le(p) | (chibihash64__load32le(p+4) << 32);
+}
+
+static inline uint64_t chibihash64__rotl(uint64_t x, int n) {
+    return (x << n) | (x >> (-n & 63));
+}
+
+static inline uint64_t chibihash64(const void *keyIn, ptrdiff_t len, uint64_t seed) {
+    const uint8_t *p = (const uint8_t *)keyIn;
+    ptrdiff_t l = len;
+
+    const uint64_t K = UINT64_C(0x2B7E151628AED2A7); // digits of e
+    uint64_t seed2 = chibihash64__rotl(seed-K, 15) + chibihash64__rotl(seed-K, 47);
+    uint64_t h[4] = { seed, seed+K, seed2, seed2+(K*K^K) };
+
+    // depending on your system unrolling might (or might not) make things
+    // a tad bit faster on large strings. on my system, it actually makes
+    // things slower.
+    // generally speaking, the cost of bigger code size is usually not
+    // worth the trade-off since larger code-size will hinder inlinability
+    // but depending on your needs, you may want to uncomment the pragma
+    // below to unroll the loop.
+    //#pragma GCC unroll 2
+    for (; l >= 32; l -= 32) {
+        for (int i = 0; i < 4; ++i, p += 8) {
+            uint64_t stripe = chibihash64__load64le(p);
+            h[i] = (stripe + h[i]) * K;
+            h[(i+1)&3] += chibihash64__rotl(stripe, 27);
+        }
+    }
+
+    for (; l >= 8; l -= 8, p += 8) {
+        h[0] ^= chibihash64__load32le(p+0); h[0] *= K;
+        h[1] ^= chibihash64__load32le(p+4); h[1] *= K;
+    }
+
+    if (l >= 4) {
+        h[2] ^= chibihash64__load32le(p);
+        h[3] ^= chibihash64__load32le(p + l - 4);
+    } else if (l > 0) {
+        h[2] ^= p[0];
+        h[3] ^= p[l/2] | ((uint64_t)p[l-1] << 8);
+    }
+
+    h[0] += chibihash64__rotl(h[2] * K, 31) ^ (h[2] >> 31);
+    h[1] += chibihash64__rotl(h[3] * K, 31) ^ (h[3] >> 31);
+    h[0] *= K; h[0] ^= h[0] >> 31;
+    h[1] += h[0];
+
+    uint64_t x = (uint64_t)len * K;
+    x ^= chibihash64__rotl(x, 29);
+    x += seed;
+    x ^= h[1];
+
+    x ^= chibihash64__rotl(x, 15) ^ chibihash64__rotl(x, 42);
+    x *= K;
+    x ^= chibihash64__rotl(x, 13) ^ chibihash64__rotl(x, 31);
+
+    return x;
+}
+
 static unsigned long long julie_charptr_hash(char *s) {
-    unsigned long hash = 5381;
-    int c;
-
-    while ((c = *s++))
-    hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
-
-    return hash;
+    return chibihash64(s, strlen(s), 0xDEADBEEF);
 }
 
 static int julie_charptr_equ(char *a, char *b) { return strcmp(a, b) == 0; }
@@ -1985,7 +2077,6 @@ static int julie_borrows_outstanding(Julie_Value *value) {
     return julie_borrows_to_subvalues_outstanding(value, value);
 }
 
-
 static void julie_replace_value(Julie_Interp *interp, Julie_Value *dst, Julie_Value *src) {
     unsigned long long save_bc;
 
@@ -2008,9 +2099,12 @@ static void julie_replace_value(Julie_Interp *interp, Julie_Value *dst, Julie_Va
 }
 
 Julie_Status _julie_object_insert_field(Julie_Interp *interp, Julie_Value *object, Julie_Value *key, Julie_Value *val, Julie_Value **out_val, int skip_lookup) {
-    Julie_Value **lookup;
+    unsigned long long   hash;
+    Julie_Value        **lookup;
 
-    if (!skip_lookup && (lookup = hash_table_get_val((_Julie_Object)object->object, key)) != NULL) {
+    hash = julie_value_hash(key);
+
+    if (!skip_lookup && (lookup = hash_table_get_val_with_hash((_Julie_Object)object->object, key, hash)) != NULL) {
         if (*lookup != val) {
             if (object->borrow_count > 0 && julie_borrows_to_subvalues_outstanding(*lookup, *lookup)) {
                 return JULIE_ERR_RELEASE_WHILE_BORROWED;
@@ -2030,7 +2124,7 @@ Julie_Status _julie_object_insert_field(Julie_Interp *interp, Julie_Value *objec
             julie_propagate_bc(val, 1);
         }
 
-        hash_table_insert((_Julie_Object)object->object, key, val);
+        hash_table_insert_with_hash((_Julie_Object)object->object, key, val, hash);
 
         if (out_val != NULL) {
             *out_val = val;
@@ -2765,7 +2859,7 @@ static Julie_Value *julie_move_value_out_of_symtab(Julie_Interp *interp, hash_ta
     return value;
 }
 
-static Julie_Status _julie_bind_new(Julie_Interp                                  *interp,
+static Julie_Status _julie_bind_new(Julie_Interp                                         *interp,
                                            const Julie_String_ID                          name,
                                            Julie_Value                                  **valuep,
                                            hash_table(Julie_String_ID, Julie_Value_Ptr)   symtab,
@@ -2806,7 +2900,7 @@ static Julie_Status _julie_bind_new(Julie_Interp                                
     } else {
         julie_propagate_bc(*valuep, 1);
     }
-    hash_table_insert(symtab, name, *valuep);
+    hash_table_insert_with_hash(symtab, name, *valuep, JULIE_STRING_ID_HASH(name));
     julie_lookup_cache_add(interp, name, *valuep);
 
     return JULIE_SUCCESS;
@@ -2895,7 +2989,7 @@ static Julie_Status _julie_unbind(Julie_Interp *interp, const Julie_String_ID na
         julie_force_free_value(interp, value);
     }
 
-    hash_table_delete(symtab, name);
+    hash_table_delete_with_hash(symtab, name, JULIE_STRING_ID_HASH(name));
 
     julie_lookup_cache_del(interp, name);
 
