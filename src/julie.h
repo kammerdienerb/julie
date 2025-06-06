@@ -1426,7 +1426,7 @@ struct Julie_Closure_Info_Struct {
 };
 
 
-#define JULIE_LOOKUP_CACHE_SIZE (32)
+#define JULIE_LOOKUP_CACHE_SIZE (12)
 #define JULIE_STRING_CACHE_SIZE (16)
 
 #define JULIE_SINT_VALUE_CACHE_SIZE (256)
