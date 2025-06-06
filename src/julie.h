@@ -354,6 +354,7 @@ const char *julie_type_string(Julie_Type type);
 #define hash_table_make_e(K_T, V_T, HASH, EQU) (CAT2(hash_table(K_T, V_T), _make)((HASH), (EQU)))
 #define hash_table_len(t) ((t)->len)
 #define hash_table_free(t) ((t)->_free((t)))
+#define hash_table_clear(t) ((t)->_clear((t)))
 #define hash_table_get_key(t, k) ((t)->_get_key((t), (k)))
 #define hash_table_get_val(t, k) ((t)->_get_val((t), (k)))
 #define hash_table_get_val_with_hash(t, k, h) ((t)->_get_val_with_hash((t), (k), (h)))
@@ -445,6 +446,8 @@ const char *julie_type_string(Julie_Type type);
                                                                                              \
     typedef void (*CAT2(hash_table(K_T, V_T), _free_t))                                      \
         (struct _hash_table(K_T, V_T) *);                                                    \
+    typedef void (*CAT2(hash_table(K_T, V_T), _clear_t))                                     \
+        (struct _hash_table(K_T, V_T) *);                                                    \
     typedef K_T* (*CAT2(hash_table(K_T, V_T), _get_key_t))                                   \
         (struct _hash_table(K_T, V_T) *, const K_T);                                         \
     typedef V_T* (*CAT2(hash_table(K_T, V_T), _get_val_t))                                   \
@@ -468,6 +471,7 @@ const char *julie_type_string(Julie_Type type);
         uint64_t *prime_sizes;                                                               \
                                                                                              \
         CAT2(hash_table(K_T, V_T), _free_t)              const _free;                        \
+        CAT2(hash_table(K_T, V_T), _clear_t)             const _clear;                       \
         CAT2(hash_table(K_T, V_T), _get_key_t)           const _get_key;                     \
         CAT2(hash_table(K_T, V_T), _get_val_t)           const _get_val;                     \
         CAT2(hash_table(K_T, V_T), _get_val_with_hash_t) const _get_val_with_hash;           \
@@ -687,7 +691,7 @@ out:;                                                                           
         return CAT2(hash_table(K_T, V_T), _get_val_with_hash)(t, key, t->_hash(key));        \
     }                                                                                        \
                                                                                              \
-    static inline void CAT2(hash_table(K_T, V_T), _free)(hash_table(K_T, V_T) t) {           \
+    static inline void CAT2(hash_table(K_T, V_T), _clear)(hash_table(K_T, V_T) t) {          \
         for (uint64_t i = 0; i < t->prime_sizes[t->_size_idx]; i += 1) {                     \
             hash_table_slot(K_T, V_T) next, slot = t->_data[i];                              \
             while (slot != NULL) {                                                           \
@@ -695,7 +699,13 @@ out:;                                                                           
                 free(slot);                                                                  \
                 slot = next;                                                                 \
             }                                                                                \
+            t->_data[i] = NULL;                                                              \
         }                                                                                    \
+        t->len = 0;                                                                          \
+    }                                                                                        \
+                                                                                             \
+    static inline void CAT2(hash_table(K_T, V_T), _free)(hash_table(K_T, V_T) t) {           \
+        CAT2(hash_table(K_T, V_T), _clear)(t);                                               \
         free(t->_data);                                                                      \
         free(t);                                                                             \
     }                                                                                        \
@@ -716,6 +726,7 @@ out:;                                                                           
                     .len                = 0,                                                 \
                     .prime_sizes        = CAT2(hash_table(K_T, V_T), _prime_sizes),          \
                     ._free              = CAT2(hash_table(K_T, V_T), _free),                 \
+                    ._clear             = CAT2(hash_table(K_T, V_T), _clear),                \
                     ._get_key           = CAT2(hash_table(K_T, V_T), _get_key),              \
                     ._get_val           = CAT2(hash_table(K_T, V_T), _get_val),              \
                     ._get_val_with_hash = CAT2(hash_table(K_T, V_T), _get_val_with_hash),    \
@@ -1544,6 +1555,7 @@ struct Julie_Interp_Struct {
 
     hash_table(Julie_String_ID, Julie_Value_Ptr)   global_symtab;
     Julie_Array                                   *local_symtab_stack;
+    unsigned long long                             local_symtab_depth;
     unsigned                                       lookup_cache_idx;
     __attribute__((aligned(32)))
     Julie_String_ID                                lookup_cache_syms[JULIE_LOOKUP_CACHE_SIZE];
@@ -2624,7 +2636,7 @@ do {                                            \
 
             fsym = NULL;
 
-            for (i = julie_array_len(interp->local_symtab_stack); i > 0; i -= 1) {
+            for (i = interp->local_symtab_depth; i > 0; i -= 1) {
                 hash_table_traverse((hash_table(Julie_String_ID, Julie_Value_Ptr))julie_array_elem(interp->local_symtab_stack, i - 1), sym, val) {
                     if ((*val) == value && !julie_symbol_starts_with_ampersand(interp, sym)) {
                         fsym = sym;
@@ -2777,7 +2789,7 @@ static void julie_lookup_cache_invalidate(Julie_Interp *interp) {
 }
 
 
-static void julie_free_symtab(Julie_Interp *interp, hash_table(Julie_String_ID, Julie_Value_Ptr) symtab) {
+static void julie_clear_symtab(Julie_Interp *interp, hash_table(Julie_String_ID, Julie_Value_Ptr) symtab) {
     Julie_Array      *collect;
     Julie_String_ID   id;
     Julie_Value     **valp;
@@ -2800,19 +2812,29 @@ static void julie_free_symtab(Julie_Interp *interp, hash_table(Julie_String_ID, 
 
     julie_array_free(collect);
 
-    hash_table_free(symtab);
+    hash_table_clear(symtab);
 }
 
 static hash_table(Julie_String_ID, Julie_Value_Ptr) julie_local_symtab(Julie_Interp *interp) {
-    return julie_array_top(interp->local_symtab_stack);
+    return interp->local_symtab_depth > 0
+            ? julie_array_elem(interp->local_symtab_stack, interp->local_symtab_depth - 1)
+            : NULL;
 }
 
 static hash_table(Julie_String_ID, Julie_Value_Ptr) julie_push_local_symtab(Julie_Interp *interp) {
     hash_table(Julie_String_ID, Julie_Value_Ptr) symtab;
 
-    symtab = hash_table_make(Julie_String_ID, Julie_Value_Ptr, julie_string_id_hash);
+    interp->local_symtab_depth += 1;
 
-    JULIE_ARRAY_PUSH(interp->local_symtab_stack, symtab);
+    if (julie_array_len(interp->local_symtab_stack) < interp->local_symtab_depth) {
+        symtab = hash_table_make(Julie_String_ID, Julie_Value_Ptr, julie_string_id_hash);
+
+        JULIE_ARRAY_PUSH(interp->local_symtab_stack, symtab);
+
+        JULIE_ASSERT(julie_array_len(interp->local_symtab_stack) == interp->local_symtab_depth);
+    } else {
+        symtab = julie_array_elem(interp->local_symtab_stack, interp->local_symtab_depth - 1);
+    }
 
     julie_lookup_cache_invalidate(interp);
 
@@ -2825,7 +2847,7 @@ static void julie_pop_local_symtab(Julie_Interp *interp) {
     Julie_Value                                  **valp;
     Julie_Value                                   *val;
 
-    symtab = julie_array_pop(interp->local_symtab_stack);
+    symtab = julie_local_symtab(interp);
     JULIE_ASSERT(symtab != NULL);
 
     hash_table_traverse(symtab, id, valp) {
@@ -2836,7 +2858,9 @@ static void julie_pop_local_symtab(Julie_Interp *interp) {
         }
     }
 
-    julie_free_symtab(interp, symtab);
+    julie_clear_symtab(interp, symtab);
+
+    interp->local_symtab_depth -= 1;
 }
 
 static Julie_Value *julie_move_value_out_of_symtab(Julie_Interp *interp, hash_table(Julie_String_ID, Julie_Value_Ptr) symtab, Julie_String_ID name) {
@@ -2851,7 +2875,7 @@ static Julie_Value *julie_move_value_out_of_symtab(Julie_Interp *interp, hash_ta
 
     value = *lookup;
 
-    hash_table_delete(symtab, name);
+    hash_table_delete_with_hash(symtab, name, JULIE_STRING_ID_HASH(name));
     julie_lookup_cache_del(interp, name);
 
     julie_propagate_bc(value, 0);
@@ -4168,7 +4192,7 @@ static Julie_Status _julie_builtin_assign(Julie_Interp *interp, Julie_Value *exp
     if (l->type == JULIE_SYMBOL) {
         id = julie_value_string_id(interp, l);
 
-        if (global || julie_array_len(interp->local_symtab_stack) == 0) {
+        if (global || interp->local_symtab_depth == 0) {
             status = julie_bind(interp, id, &rval);
         } else {
             status = julie_bind_local(interp, id, &rval);
@@ -4257,7 +4281,7 @@ static Julie_Status julie_builtin_unref(Julie_Interp *interp, Julie_Value *expr,
         goto out;
     }
 
-    if (julie_array_len(interp->local_symtab_stack) > 0) {
+    if (interp->local_symtab_depth > 0) {
         status = julie_unbind_local(interp, id);
     } else {
         status = JULIE_ERR_LOOKUP;
@@ -7324,7 +7348,7 @@ static Julie_Status julie_builtin_repeat(Julie_Interp *interp, Julie_Value *expr
         }
 
         it = julie_sint_value(interp, i);
-        if (julie_array_len(interp->local_symtab_stack) == 0) {
+        if (interp->local_symtab_depth == 0) {
             status = julie_bind(interp, id, &it);
         } else {
             status = julie_bind_local(interp, id, &it);
@@ -7365,7 +7389,7 @@ out_unbind:;
 
         save_status = status;
 
-        if (julie_array_len(interp->local_symtab_stack) == 0) {
+        if (interp->local_symtab_depth == 0) {
             status = julie_unbind(interp, id);
         } else {
             status = julie_unbind_local(interp, id);
@@ -7444,7 +7468,7 @@ static Julie_Status julie_builtin_foreach(Julie_Interp *interp, Julie_Value *exp
 
             bound = it;
 
-            if (julie_array_len(interp->local_symtab_stack) == 0) {
+            if (interp->local_symtab_depth == 0) {
                 status = julie_bind(interp, id, &bound);
             } else {
                 status = julie_bind_local(interp, id, &bound);
@@ -7463,7 +7487,7 @@ static Julie_Status julie_builtin_foreach(Julie_Interp *interp, Julie_Value *exp
                 status = julie_eval(interp, val, &ev);
                 if (status != JULIE_SUCCESS) {
                     JULIE_UNBORROW(it);
-                    if (julie_array_len(interp->local_symtab_stack) == 0) {
+                    if (interp->local_symtab_depth == 0) {
                         julie_unbind(interp, id);
                     } else {
                         julie_unbind_local(interp, id);
@@ -7492,7 +7516,7 @@ static Julie_Status julie_builtin_foreach(Julie_Interp *interp, Julie_Value *exp
 
             JULIE_UNBORROW(it);
 
-            if (julie_array_len(interp->local_symtab_stack) == 0) {
+            if (interp->local_symtab_depth == 0) {
                 status = julie_unbind(interp, id);
             } else {
                 status = julie_unbind_local(interp, id);
@@ -7521,7 +7545,7 @@ static Julie_Status julie_builtin_foreach(Julie_Interp *interp, Julie_Value *exp
 
             bound = it;
 
-            if (julie_array_len(interp->local_symtab_stack) == 0) {
+            if (interp->local_symtab_depth == 0) {
                 status = julie_bind(interp, id, &bound);
             } else {
                 status = julie_bind_local(interp, id, &bound);
@@ -7540,7 +7564,7 @@ static Julie_Status julie_builtin_foreach(Julie_Interp *interp, Julie_Value *exp
                 status = julie_eval(interp, val, &ev);
                 if (status != JULIE_SUCCESS) {
                     JULIE_UNBORROW(it);
-                    if (julie_array_len(interp->local_symtab_stack) == 0) {
+                    if (interp->local_symtab_depth == 0) {
                         julie_unbind(interp, id);
                     } else {
                         julie_unbind_local(interp, id);
@@ -7570,7 +7594,7 @@ static Julie_Status julie_builtin_foreach(Julie_Interp *interp, Julie_Value *exp
 
             JULIE_UNBORROW(it);
 
-            if (julie_array_len(interp->local_symtab_stack) == 0) {
+            if (interp->local_symtab_depth == 0) {
                 status = julie_unbind(interp, id);
             } else {
                 status = julie_unbind_local(interp, id);
@@ -10080,10 +10104,12 @@ void julie_free(Julie_Interp *interp) {
     }
     julie_array_free(interp->argv);
 
-    julie_free_symtab(interp, interp->global_symtab);
+    julie_clear_symtab(interp, interp->global_symtab);
+    hash_table_free(interp->global_symtab);
 
     ARRAY_FOR_EACH(interp->local_symtab_stack, symtab) {
-        julie_free_symtab(interp, symtab);
+        julie_clear_symtab(interp, symtab);
+        hash_table_free(symtab);
     }
     julie_array_free(interp->local_symtab_stack);
 
