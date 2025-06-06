@@ -2634,8 +2634,8 @@ static Julie_Value *julie_lookup_cache_search(const Julie_Interp * restrict inte
     unsigned long long                     i;
 
     for (i = 0; i < JULIE_LOOKUP_CACHE_SIZE; i += 1) {
-        if (interp->lookup_cache_syms[i] == sym) {
-            return interp->lookup_cache_vals[i];
+        if (syms[i] == sym) {
+            return vals[i];
         }
     }
 
