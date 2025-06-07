@@ -9891,7 +9891,7 @@ Julie_Interp *julie_init_interp(void) {
     Julie_Interp *interp;
     int           i;
 
-    interp = malloc(sizeof(*interp));
+    posix_memalign((void**)&interp, 32, sizeof(*interp));
 
     memset(interp, 0, sizeof(*interp));
 
