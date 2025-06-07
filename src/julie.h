@@ -9317,7 +9317,7 @@ static Julie_Status _julie_invoke_with_cxt(Julie_Interp *interp, Julie_Apply_Con
     status = JULIE_SUCCESS;
 
     n_values = julie_array_len(cxt->args);
-    values   = (Julie_Value**)cxt->args->data;
+    values   = (Julie_Value**)(cxt->args == JULIE_ARRAY_INIT ? NULL : cxt->args->data);
 
     /* Evaluate function application. */
     switch (fn->type) {
