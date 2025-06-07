@@ -2783,7 +2783,7 @@ static void julie_lookup_cache_del(Julie_Interp *interp, const Julie_String_ID s
 
 static void julie_lookup_cache_invalidate(Julie_Interp *interp) {
     memset(interp->lookup_cache_syms, 0, sizeof(interp->lookup_cache_syms));
-    memset(interp->lookup_cache_vals, 0, sizeof(interp->lookup_cache_syms));
+    memset(interp->lookup_cache_vals, 0, sizeof(interp->lookup_cache_vals));
 }
 
 
