@@ -1557,10 +1557,8 @@ struct Julie_Interp_Struct {
     Julie_Array                                   *local_symtab_stack;
     unsigned long long                             local_symtab_depth;
     unsigned                                       lookup_cache_idx;
-    __attribute__((aligned(32)))
-    Julie_String_ID                                lookup_cache_syms[JULIE_LOOKUP_CACHE_SIZE];
-    __attribute__((aligned(32)))
-    Julie_Value                                   *lookup_cache_vals[JULIE_LOOKUP_CACHE_SIZE];
+    Julie_String_ID                                lookup_cache_syms[JULIE_LOOKUP_CACHE_SIZE] __attribute__((aligned(32)));
+    Julie_Value                                   *lookup_cache_vals[JULIE_LOOKUP_CACHE_SIZE] __attribute__((aligned(32)));
 
     Julie_Array                                   *roots;
     Julie_Array                                   *source_infos;
