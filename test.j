@@ -141,3 +141,22 @@ b =
 a =
     fn () (b)
 a
+
+define-class Class
+    'list : (list)
+
+    'add-to-list :
+        fn (&self ...)
+            foreach &arg ...
+                append (&self 'list) &arg
+
+    'print :
+        fn (&self)
+            println "==== Check out my object: ===="
+            println (&self 'list)
+            println "=============================="
+
+instance = (new-instance Class)
+
+instance @ ('add-to-list "a" "b" "c")
+instance @ ('print)
