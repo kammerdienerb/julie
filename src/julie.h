@@ -827,10 +827,6 @@ static unsigned long long julie_charptr_hash(char *s) {
 
 static int julie_charptr_equ(char *a, char *b) { return strcmp(a, b) == 0; }
 
-static unsigned long long julie_value_ptr_hash(Julie_Value *value) {
-    return ((unsigned long long)((void*)value)) >> 4;
-}
-
 
 /* qsort() + a context argument is a total portability mess. Thanks to this guy,
    who wrote a nice wrapper and fallback so that I didn't have to. */
