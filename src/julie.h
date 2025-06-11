@@ -3346,20 +3346,20 @@ do {                                                                   \
     return (_status);                                                  \
 } while (0)
 
-static int julie_is_space(int c) {
+static inline int julie_is_space(int c) {
     unsigned char d = c - 9;
     return (0x80001FU >> (d & 31)) & (1U >> (d >> 5));
 }
 
-static int julie_is_digit(int c) {
+static inline int julie_is_digit(int c) {
     return (unsigned int)(('0' - 1 - c) & (c - ('9' + 1))) >> (sizeof(c) * 8 - 1);
 }
 
-static int julie_is_alpha(int c) {
+static inline int julie_is_alpha(int c) {
     return (unsigned int)(('a' - 1 - (c | 32)) & ((c | 32) - ('z' + 1))) >> (sizeof(c) * 8 - 1);
 }
 
-static int julie_is_alnum(int c) {
+static inline int julie_is_alnum(int c) {
     return julie_is_alpha(c) || julie_is_digit(c);
 }
 
