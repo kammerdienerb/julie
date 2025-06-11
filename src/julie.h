@@ -2787,32 +2787,6 @@ static void julie_lookup_cache_invalidate(Julie_Interp *interp) {
 }
 
 
-static void julie_clear_symtab(Julie_Interp *interp, hash_table(Julie_String_ID, Julie_Value_Ptr) symtab) {
-    Julie_Array      *collect;
-    Julie_String_ID   id;
-    Julie_Value     **valp;
-    Julie_Value      *val;
-
-    collect = JULIE_ARRAY_INIT;
-    JULIE_ARRAY_RESERVE(collect, hash_table_len(symtab));
-
-    hash_table_traverse(symtab, id, valp) {
-        if (!julie_symbol_starts_with_ampersand(interp, id) || (*valp)->type == JULIE_BUILTIN_FN) {
-            JULIE_ARRAY_PUSH(collect, *valp);
-        }
-    }
-
-    ARRAY_FOR_EACH(collect, val) {
-        if (!val->source_node) {
-            julie_force_free_value(interp, val);
-        }
-    }
-
-    julie_array_free(collect);
-
-    hash_table_clear(symtab);
-}
-
 static hash_table(Julie_String_ID, Julie_Value_Ptr) julie_local_symtab(Julie_Interp *interp) {
     return interp->local_symtab_depth > 0
             ? julie_array_elem(interp->local_symtab_stack, interp->local_symtab_depth - 1)
@@ -2839,7 +2813,33 @@ static hash_table(Julie_String_ID, Julie_Value_Ptr) julie_push_local_symtab(Juli
     return symtab;
 }
 
-static void julie_pop_local_symtab(Julie_Interp *interp) {
+static void julie_clear_symtab(Julie_Interp *interp, hash_table(Julie_String_ID, Julie_Value_Ptr) symtab) {
+    Julie_Array      *collect;
+    Julie_String_ID   id;
+    Julie_Value     **valp;
+    Julie_Value      *val;
+
+    collect = JULIE_ARRAY_INIT;
+    JULIE_ARRAY_RESERVE(collect, hash_table_len(symtab));
+
+    hash_table_traverse(symtab, id, valp) {
+        if (!julie_symbol_starts_with_ampersand(interp, id) || (*valp)->type == JULIE_BUILTIN_FN) {
+            JULIE_ARRAY_PUSH(collect, *valp);
+        }
+    }
+
+    ARRAY_FOR_EACH(collect, val) {
+        if (!val->source_node) {
+            julie_force_free_value(interp, val);
+        }
+    }
+
+    julie_array_free(collect);
+
+    hash_table_clear(symtab);
+}
+
+static Julie_Status julie_pop_local_symtab(Julie_Interp *interp, Julie_String_ID *err_sym) {
     hash_table(Julie_String_ID, Julie_Value_Ptr)   symtab;
     Julie_String_ID                                id;
     Julie_Value                                  **valp;
@@ -2855,10 +2855,24 @@ static void julie_pop_local_symtab(Julie_Interp *interp) {
             JULIE_UNBORROW(val);
         }
     }
+    hash_table_traverse(symtab, id, valp) {
+        val = *valp;
+
+        if (!julie_symbol_starts_with_ampersand(interp, id) || (*valp)->type == JULIE_BUILTIN_FN) {
+            if (julie_borrows_outstanding(val)) {
+                if (err_sym != NULL) {
+                    *err_sym = id;
+                }
+                return JULIE_ERR_RELEASE_WHILE_BORROWED;
+            }
+        }
+    }
 
     julie_clear_symtab(interp, symtab);
 
     interp->local_symtab_depth -= 1;
+
+    return JULIE_SUCCESS;
 }
 
 static Julie_Value *julie_move_value_out_of_symtab(Julie_Interp *interp, hash_table(Julie_String_ID, Julie_Value_Ptr) symtab, Julie_String_ID name) {
@@ -9405,7 +9419,7 @@ static Julie_Status _julie_invoke_with_cxt(Julie_Interp *interp, Julie_Apply_Con
                             julie_free_value(interp, ev);
                         }
                         julie_array_free(arg_vals);
-                        julie_pop_local_symtab(interp);
+                        julie_pop_local_symtab(interp, NULL);
                         julie_make_bind_error(interp, cap_val, status, cap_sym);
                         goto out;
                     }
@@ -9427,7 +9441,7 @@ static Julie_Status _julie_invoke_with_cxt(Julie_Interp *interp, Julie_Apply_Con
                         julie_free_value(interp, ev);
                     }
                     julie_array_free(arg_vals);
-                    julie_pop_local_symtab(interp);
+                    julie_pop_local_symtab(interp, NULL);
                     julie_make_bind_error(interp, values[i], status, id);
                     goto out;
                 }
@@ -9450,7 +9464,7 @@ static Julie_Status _julie_invoke_with_cxt(Julie_Interp *interp, Julie_Apply_Con
                     }
                     julie_array_free(arg_vals);
                     JULIE_UNBORROW(val);
-                    julie_pop_local_symtab(interp);
+                    julie_pop_local_symtab(interp, NULL);
                     goto out;
                 }
 
@@ -9489,9 +9503,15 @@ done_ev:;
                 JULIE_UNBORROW(val);
             }
 
-            julie_pop_local_symtab(interp);
-
+            status = julie_pop_local_symtab(interp, &id);
             julie_array_free(arg_vals);
+
+            if (status != JULIE_SUCCESS) {
+                *result = NULL;
+                julie_make_bind_error(interp, expr, status, id);
+                goto out;
+            }
+
             break;
 
         case JULIE_LIST:
