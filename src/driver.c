@@ -60,12 +60,12 @@ int main(int argc, char **argv) {
 
 static void on_julie_error(Julie_Error_Info *info) {
     Julie_Status           status;
-    const char           *blue;
-    const char           *red;
-    const char           *cyan;
-    const char           *reset;
-    char                 *s;
-    unsigned              i;
+    const char            *blue;
+    const char            *red;
+    const char            *cyan;
+    const char            *reset;
+    char                  *s;
+    unsigned               i;
     Julie_Backtrace_Entry *it;
 
     status = info->status;
@@ -156,7 +156,7 @@ static void on_julie_error(Julie_Error_Info *info) {
     fprintf(stderr, "%s\n", reset);
 
     i = 0;
-    while ((it = julie_bt_entry(interp, i)) != NULL) {
+    while ((it = julie_bt_entry(info->interp, i)) != NULL) {
         s = julie_to_string(info->interp, it->fn, 0);
         fprintf(stderr, "    %s%s:%llu:%llu%s %s%s%s\n",
                 blue,
