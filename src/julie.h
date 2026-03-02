@@ -10770,7 +10770,7 @@ static Julie_Status julie_builtin_exit(Julie_Interp *interp, Julie_Value *expr, 
             goto out;
         }
 
-        if (exit_code->type != _JULIE_INTEGER) {
+        if (!JULIE_TYPE_IS_INTEGER(exit_code->type)) {
             status = JULIE_ERR_TYPE;
             julie_make_type_error(interp, exit_code, _JULIE_INTEGER, exit_code->type);
             goto out_free;
