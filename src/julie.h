@@ -2865,9 +2865,12 @@ static Julie_String_ID julie_find_value_in_symtabs(Julie_Interp *interp, const J
 }
 
 static inline Julie_Symbol_Table *julie_new_symtab(void) {
+    int                 err;
     Julie_Symbol_Table *symtab;
 
-    posix_memalign((void**)&symtab, 64, sizeof(*symtab));
+    err = posix_memalign((void**)&symtab, 64, sizeof(*symtab));
+    (void)err;
+
     memset(symtab, 0, sizeof(*symtab));
 
     return symtab;
@@ -11416,6 +11419,7 @@ out:;
 
 
 static Julie_Interp *_julie_init_interp(int sandboxed) {
+    int           err;
     Julie_Interp *interp;
     int           i;
 
@@ -11423,7 +11427,8 @@ static Julie_Interp *_julie_init_interp(int sandboxed) {
         srandom(time(NULL));
     }
 
-    posix_memalign((void**)&interp, 64, sizeof(*interp));
+    err = posix_memalign((void**)&interp, 64, sizeof(*interp));
+    (void)err;
 
     memset(interp, 0, sizeof(*interp));
 
