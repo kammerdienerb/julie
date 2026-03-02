@@ -1348,6 +1348,8 @@ struct Julie_Value_Struct {
                 void               *object;
                 Julie_Array        *list;
                 Julie_Fn            builtin_fn;
+
+                Julie_Value        *free_list_next;
             };
 
             unsigned char tag;
@@ -1399,9 +1401,6 @@ do {                                                                       \
 
 typedef Julie_Value *Julie_Value_Ptr;
 
-
-#define JULIE_NEW() (malloc(sizeof(Julie_Value)))
-#define JULIE_DEL(_value) (free((_value)))
 
 
 Julie_Source_Value_Info *julie_get_source_value_info(Julie_Value *value) {
@@ -1476,6 +1475,8 @@ struct Julie_Interp_Struct {
 
     Julie_String_ID                        cur_file_id;
 
+    Julie_Value                           *value_free_list;
+
     unsigned long long                     string_cache_sizes[JULIE_STRING_CACHE_SIZE];
     char                                  *string_cache_pointers[JULIE_STRING_CACHE_SIZE];
 
@@ -1507,6 +1508,29 @@ struct Julie_Interp_Struct {
 
     hash_table(Julie_String_ID, regex_t)   compiled_regex;
 };
+
+static Julie_Value *julie_new_value(Julie_Interp *interp) {
+    Julie_Value *val = interp->value_free_list;
+
+    if (likely(val != NULL)) {
+        interp->value_free_list = val->free_list_next;
+    } else {
+        val = malloc(sizeof(Julie_Value));
+    }
+
+    return val;
+}
+
+static void julie_del_value(Julie_Interp *interp, Julie_Value *value) {
+    value->free_list_next   = interp->value_free_list;
+    interp->value_free_list = value;
+}
+
+#define JULIE_NEW(_interp)         (julie_new_value((_interp)))
+#define JULIE_DEL(_interp, _value) (julie_del_value((_interp), (_value)))
+
+// #define JULIE_NEW()       (malloc(sizeof(Julie_Value)))
+// #define JULIE_DEL(_value) (free((_value)))
 
 
 static Julie_Apply_Context *julie_push_cxt(Julie_Interp *interp, Julie_Value *value) {
@@ -1745,7 +1769,7 @@ static Julie_Value *_julie_copy_real(Julie_Interp *interp, Julie_Value *value, i
     Julie_Closure_Info  *closure_cpy;
     Julie_String_ID      sym;
 
-    copy = JULIE_NEW();
+    copy = JULIE_NEW(interp);
 
     *copy              = *value;
     copy->owned        = 0;
@@ -1828,7 +1852,7 @@ static Julie_Value *julie_copy_sandboxed_value(Julie_Interp *dst_interp, Julie_V
     Julie_Closure_Info  *closure_cpy;
     Julie_String_ID      sym;
 
-    copy = JULIE_NEW();
+    copy = JULIE_NEW(dst_interp);
 
     *copy              = *value;
     copy->owned        = 0;
@@ -1979,7 +2003,7 @@ done_string:;
     }
 
     if (free_root) {
-        JULIE_DEL(value);
+        JULIE_DEL(interp, value);
     }
 }
 
@@ -2163,7 +2187,7 @@ Julie_Value *julie_nil_value(Julie_Interp *interp) {
 static Julie_Value *julie_source_nil_value(Julie_Interp *interp) {
     Julie_Value *v;
 
-    v = JULIE_NEW();
+    v = JULIE_NEW(interp);
 
     v->type         = JULIE_NIL;
     v->tag          = 0;
@@ -2181,7 +2205,7 @@ Julie_Value *julie_sint_value(Julie_Interp *interp, long long sint) {
         return interp->sint_values[sint];
     }
 
-    v = JULIE_NEW();
+    v = JULIE_NEW(interp);
 
     v->type         = JULIE_SINT;
     v->sint         = sint;
@@ -2196,7 +2220,7 @@ Julie_Value *julie_sint_value(Julie_Interp *interp, long long sint) {
 static Julie_Value *julie_source_sint_value(Julie_Interp *interp, long long sint) {
     Julie_Value *v;
 
-    v = JULIE_NEW();
+    v = JULIE_NEW(interp);
 
     v->type         = JULIE_SINT;
     v->sint         = sint;
@@ -2211,7 +2235,7 @@ static Julie_Value *julie_source_sint_value(Julie_Interp *interp, long long sint
 Julie_Value *julie_uint_value(Julie_Interp *interp, unsigned long long uint) {
     Julie_Value *v;
 
-    v = JULIE_NEW();
+    v = JULIE_NEW(interp);
 
     v->type         = JULIE_UINT;
     v->uint         = uint;
@@ -2226,7 +2250,7 @@ Julie_Value *julie_uint_value(Julie_Interp *interp, unsigned long long uint) {
 static Julie_Value *julie_source_uint_value(Julie_Interp *interp, unsigned long long uint) {
     Julie_Value *v;
 
-    v = JULIE_NEW();
+    v = JULIE_NEW(interp);
 
     v->type         = JULIE_UINT;
     v->uint         = uint;
@@ -2241,7 +2265,7 @@ static Julie_Value *julie_source_uint_value(Julie_Interp *interp, unsigned long 
 Julie_Value *julie_float_value(Julie_Interp *interp, double floating) {
     Julie_Value *v;
 
-    v = JULIE_NEW();
+    v = JULIE_NEW(interp);
 
     v->type         = JULIE_FLOAT;
     v->floating     = floating;
@@ -2256,7 +2280,7 @@ Julie_Value *julie_float_value(Julie_Interp *interp, double floating) {
 static Julie_Value *julie_source_float_value(Julie_Interp *interp, double floating) {
     Julie_Value *v;
 
-    v = JULIE_NEW();
+    v = JULIE_NEW(interp);
 
     v->type         = JULIE_FLOAT;
     v->floating     = floating;
@@ -2271,7 +2295,7 @@ static Julie_Value *julie_source_float_value(Julie_Interp *interp, double floati
 Julie_Value *julie_symbol_value(Julie_Interp *interp, const Julie_String_ID id) {
     Julie_Value *v;
 
-    v = JULIE_NEW();
+    v = JULIE_NEW(interp);
 
     v->type         = JULIE_SYMBOL;
     v->string_id    = id;
@@ -2286,7 +2310,7 @@ Julie_Value *julie_symbol_value(Julie_Interp *interp, const Julie_String_ID id) 
 static Julie_Value *julie_source_symbol_value(Julie_Interp *interp, const Julie_String_ID id) {
     Julie_Value *v;
 
-    v = JULIE_NEW();
+    v = JULIE_NEW(interp);
 
     v->type         = JULIE_SYMBOL;
     v->string_id    = id;
@@ -2302,7 +2326,7 @@ Julie_Value *julie_string_value_known_size(Julie_Interp *interp, const char *s, 
     Julie_Value *v;
     int          i;
 
-    v = JULIE_NEW();
+    v = JULIE_NEW(interp);
 
     v->type = JULIE_STRING;
 
@@ -2341,7 +2365,7 @@ Julie_Value *julie_string_value(Julie_Interp *interp, const char *s) {
 Julie_Value *julie_string_value_giveaway(Julie_Interp *interp, char *s) {
     Julie_Value *v;
 
-    v = JULIE_NEW();
+    v = JULIE_NEW(interp);
 
     v->type         = JULIE_STRING;
     v->cstring      = s;
@@ -2356,7 +2380,7 @@ Julie_Value *julie_string_value_giveaway(Julie_Interp *interp, char *s) {
 Julie_Value *julie_interned_string_value(Julie_Interp *interp, const Julie_String_ID id) {
     Julie_Value *v;
 
-    v = JULIE_NEW();
+    v = JULIE_NEW(interp);
 
     v->type         = JULIE_STRING;
     v->string_id    = id;
@@ -2371,7 +2395,7 @@ Julie_Value *julie_interned_string_value(Julie_Interp *interp, const Julie_Strin
 static Julie_Value *julie_source_interned_string_value(Julie_Interp *interp, const Julie_String_ID id) {
     Julie_Value *v;
 
-    v = JULIE_NEW();
+    v = JULIE_NEW(interp);
 
     v->type         = JULIE_STRING;
     v->string_id    = id;
@@ -2386,7 +2410,7 @@ static Julie_Value *julie_source_interned_string_value(Julie_Interp *interp, con
 Julie_Value *julie_list_value(Julie_Interp *interp) {
     Julie_Value *v;
 
-    v = JULIE_NEW();
+    v = JULIE_NEW(interp);
 
     v->type         = JULIE_LIST;
     v->list         = JULIE_ARRAY_INIT;
@@ -2401,7 +2425,7 @@ Julie_Value *julie_list_value(Julie_Interp *interp) {
 Julie_Value *julie_object_value(Julie_Interp *interp) {
     Julie_Value *v;
 
-    v = JULIE_NEW();
+    v = JULIE_NEW(interp);
 
     v->type         = JULIE_OBJECT;
     v->object       = hash_table_make_e(Julie_Value_Ptr, Julie_Value_Ptr, julie_value_hash, julie_equal);
@@ -2417,7 +2441,7 @@ Julie_Value *julie_fn_value(Julie_Interp *interp, unsigned long long n_values, J
     Julie_Value        *v;
     unsigned long long  i;
 
-    v = JULIE_NEW();
+    v = JULIE_NEW(interp);
 
     v->type         = JULIE_FN;
     v->list         = JULIE_ARRAY_INIT;
@@ -2440,7 +2464,7 @@ Julie_Value *julie_lambda_value(Julie_Interp *interp, unsigned long long n_value
     Julie_Value        *v;
     unsigned long long  i;
 
-    v = JULIE_NEW();
+    v = JULIE_NEW(interp);
 
     v->type         = JULIE_LAMBDA;
     v->list         = JULIE_ARRAY_INIT;
@@ -2464,7 +2488,7 @@ Julie_Value *julie_lambda_value(Julie_Interp *interp, unsigned long long n_value
 Julie_Value *julie_builtin_fn_value(Julie_Interp *interp, Julie_Fn fn) {
     Julie_Value *v;
 
-    v = JULIE_NEW();
+    v = JULIE_NEW(interp);
 
     v->type         = JULIE_BUILTIN_FN;
     v->builtin_fn   = fn;
@@ -3609,7 +3633,7 @@ static Julie_Value *julie_push_list(Julie_Parse_Context *cxt) {
     interp = cxt->interp;
     (void)interp;
 
-    value = JULIE_NEW();
+    value = JULIE_NEW(interp);
     value->type         = JULIE_LIST;
     value->tag          = 0;
     value->source_node  = !cxt->temporary;
@@ -4571,7 +4595,7 @@ static Julie_Status julie_builtin_move(Julie_Interp *interp, Julie_Value *expr, 
     save_owned = val->owned;
     save_bc    = val->borrow_count;
 
-    dst = JULIE_NEW();
+    dst = JULIE_NEW(interp);
     *dst = *val;
 
     memset(val, 0, sizeof(*val));
@@ -11445,14 +11469,14 @@ static Julie_Interp *_julie_init_interp(int sandboxed) {
     interp->source_infos   = JULIE_ARRAY_INIT;
     interp->apply_contexts = JULIE_ARRAY_INIT;
 
-    interp->nil_value               = JULIE_NEW();
+    interp->nil_value               = JULIE_NEW(interp);
     interp->nil_value->type         = JULIE_NIL;
     interp->nil_value->tag          = 0;
     interp->nil_value->source_node  = 1;
     interp->nil_value->owned        = 0;
     interp->nil_value->borrow_count = 0;
 
-    interp->__class___value               = JULIE_NEW();
+    interp->__class___value               = JULIE_NEW(interp);
     interp->__class___value->type         = JULIE_SYMBOL;
     interp->__class___value->string_id    = julie_get_string_id(interp, "'__class__");
     interp->__class___value->tag          = JULIE_STRING_TYPE_INTERN;
@@ -11461,7 +11485,7 @@ static Julie_Interp *_julie_init_interp(int sandboxed) {
     interp->__class___value->borrow_count = 0;
 
     for (i = 0; i < JULIE_SINT_VALUE_CACHE_SIZE; i += 1) {
-        interp->sint_values[i]               = JULIE_NEW();
+        interp->sint_values[i]               = JULIE_NEW(interp);
         interp->sint_values[i]->type         = JULIE_SINT;
         interp->sint_values[i]->sint         = i;
         interp->sint_values[i]->tag          = 0;
