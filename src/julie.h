@@ -10882,7 +10882,7 @@ static Julie_Status _julie_invoke_with_cxt(Julie_Interp *interp, Julie_Apply_Con
     Julie_Value             **params;
     Julie_Value              *param_list;
     int                       vargs;
-    Julie_Array              *arg_vals;
+    Julie_Value             **arg_vals;
     unsigned                  i;
     Julie_Value              *ev;
     Julie_Value              *rest;
@@ -10933,13 +10933,12 @@ static Julie_Status _julie_invoke_with_cxt(Julie_Interp *interp, Julie_Apply_Con
 
             pushed_symtab = 0;
 
-            arg_vals = JULIE_ARRAY_INIT;
-            JULIE_ARRAY_RESERVE(arg_vals, n_params);
+            arg_vals = alloca(n_params * sizeof(Julie_Value*));
 
             for (i = 0; i < n_params - !!vargs; i += 1) {
                 status = julie_eval(interp, values[i], &ev);
                 if (status != JULIE_SUCCESS) { goto cleanup; }
-                JULIE_ARRAY_PUSH(arg_vals, ev);
+                arg_vals[i] = ev;
             }
 
             if (vargs) {
@@ -10958,7 +10957,7 @@ static Julie_Status _julie_invoke_with_cxt(Julie_Interp *interp, Julie_Apply_Con
                         JULIE_ARRAY_PUSH(rest->list, ev);
                     }
                 }
-                JULIE_ARRAY_PUSH(arg_vals, rest);
+                arg_vals[n_params - 1] = rest;
             }
 
             julie_push_local_symtab(interp);
@@ -10977,8 +10976,8 @@ static Julie_Status _julie_invoke_with_cxt(Julie_Interp *interp, Julie_Apply_Con
                 }
             }
 
-            i = 0;
-            ARRAY_FOR_EACH(arg_vals, ev) {
+            for (i = 0; i < n_params; i += 1) {
+                ev      = arg_vals[i];
                 arg_sym = params[i];
                 JULIE_ASSERT(arg_sym->type == JULIE_SYMBOL);
 
@@ -10986,7 +10985,7 @@ static Julie_Status _julie_invoke_with_cxt(Julie_Interp *interp, Julie_Apply_Con
 
                 if (julie_symbol_starts_with_ampersand(interp, id) && !ev->owned) {
                     ev->owned = 1;
-                    arg_vals->data[i] = (void*)((unsigned long long)ev | 0x1);
+                    arg_vals[i] = (void*)((unsigned long long)ev | 0x1);
                 }
 
                 status = julie_bind_local(interp, id, &ev);
@@ -10995,8 +10994,6 @@ static Julie_Status _julie_invoke_with_cxt(Julie_Interp *interp, Julie_Apply_Con
                     julie_make_bind_error(interp, values[i], status, id);
                     goto cleanup;
                 }
-
-                i += 1;
             }
 
             n_exprs = julie_array_len(fn->list) - !no_param_lambda;
@@ -11036,7 +11033,8 @@ cleanup:;
                 *result = NULL;
             }
 
-            ARRAY_FOR_EACH(arg_vals, ev) {
+            for (i = 0; i < n_params; i += 1) {
+                ev = arg_vals[i];
                 transient_to_ref = !!((unsigned long long)ev & 0x1);
                 ev = (void*)((unsigned long long)ev & ~0x1);
 
@@ -11045,7 +11043,6 @@ cleanup:;
                     julie_force_free_value(interp, ev);
                 }
             }
-            julie_array_free(arg_vals);
 
             break;
 
