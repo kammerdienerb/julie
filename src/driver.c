@@ -62,21 +62,23 @@ static void on_julie_error(Julie_Error_Info *info) {
     Julie_Status           status;
     const char            *blue;
     const char            *red;
-    const char            *cyan;
     const char            *reset;
     char                  *s;
     unsigned               i;
     Julie_Backtrace_Entry *it;
+    Julie_Value           *key;
+    Julie_Value           *bt;
+    Julie_Value           *frame;
+    Julie_Value           *message;
 
     status = info->status;
 
     if (isatty(2)) {
         blue  = "\033[34m";
         red   = "\033[31m";
-        cyan  = "\033[36m";
         reset = "\033[0m";
     } else {
-        blue = red = cyan = reset = "";
+        blue = red = reset = "";
     }
 
     fprintf(stderr, "%s%s:%llu:%llu:%s %serror: %s",
@@ -158,18 +160,57 @@ static void on_julie_error(Julie_Error_Info *info) {
     i = 0;
     while ((it = julie_bt_entry(info->interp, i)) != NULL) {
         s = julie_to_string(info->interp, it->fn, 0);
-        fprintf(stderr, "    %s%s:%llu:%llu%s %s%s%s\n",
+        fprintf(stderr, "    %s%s:%llu:%llu %s%s\n",
                 blue,
                 it->file_id == NULL ? "<?>" : julie_get_cstring(it->file_id),
                 it->line,
                 it->col,
-                reset,
-                cyan,
                 s,
                 reset);
         free(s);
 
         i += 1;
+    }
+
+    if (info->status == JULIE_ERR_ERROR_VALUE) {
+        key = julie_symbol_value(info->interp, julie_get_string_id(info->interp, "'__message__"));
+        message = julie_object_get_field(info->thrown.error_value, key);
+        julie_free_value(info->interp, key);
+
+        if (message != NULL) {
+            s = julie_to_string(info->interp, message, JULIE_NO_QUOTE);
+            fprintf(stderr, "%serror thrown: %s%s%s\n", blue, red, s, reset);
+            free(s);
+        } else {
+            fprintf(stderr, "%serror thrown:%s\n", blue, reset);
+        }
+
+        key = julie_symbol_value(info->interp, julie_get_string_id(info->interp, "'__backtrace__"));
+        bt = julie_object_get_field(info->thrown.error_value, key);
+        julie_free_value(info->interp, key);
+
+        if (bt != NULL && bt->type == JULIE_LIST) {
+            ARRAY_FOR_EACH(bt->list, frame) {
+                s = julie_to_string(info->interp, frame, JULIE_NO_QUOTE);
+                fprintf(stderr, "    %s%s%s\n", blue, s, reset);
+                free(s);
+            }
+        }
+
+
+
+/*         s = julie_to_string(info->interp, info->thrown.error_value, JULIE_NO_QUOTE); */
+/*         fprintf(stderr, "%s\n%s%s", reset, red, s); */
+/*         free(s); */
+
+/*         fprintf(stderr, "%s%s:%llu:%llu:%s %serror: %s", */
+/*                 blue, */
+/*                 info->file_id == NULL ? "<?>" : julie_get_cstring(info->file_id), */
+/*                 info->line, */
+/*                 info->col, */
+/*                 reset, */
+/*                 red, */
+/*                 julie_error_string(status)); */
     }
 
     julie_free_error_info(info);

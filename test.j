@@ -161,3 +161,19 @@ instance = (new-instance Class)
 
 instance @ ('add-to-list "a" "b" "c")
 instance @ ('print)
+
+makes-error =
+    fn ()
+        x = 1
+        select x
+            error "oopsie poopsie"
+            ()
+
+err = (makes-error)
+
+throws-the-error =
+    fn (...)
+        foreach &arg ...
+            println &arg
+
+throws-the-error err
