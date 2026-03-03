@@ -1449,6 +1449,7 @@ struct Julie_Closure_Info_Struct {
 struct Julie_Symbol_Table_Struct {
     Julie_String_ID                               syms[JULIE_SYMTAB_SIZE] __attribute__((aligned(64)));
     Julie_Value                                  *vals[JULIE_SYMTAB_SIZE] __attribute__((aligned(64)));
+    unsigned                                      used;
     hash_table(Julie_String_ID, Julie_Value_Ptr)  expansion;
     unsigned                                      cache_idx;
 };
@@ -2628,7 +2629,7 @@ do {                                            \
             label = "function";
             fsym = NULL;
             if (interp->global_symtab->expansion == NULL) {
-                for (i = 0; i < JULIE_SYMTAB_SIZE; i += 1) {
+                for (i = 0; i < interp->global_symtab->used; i += 1) {
                     if (interp->global_symtab->syms[i] != NULL
                     &&  interp->global_symtab->vals[i]->type == JULIE_BUILTIN_FN
                     &&  interp->global_symtab->vals[i]->builtin_fn == value->builtin_fn) {
@@ -2779,12 +2780,11 @@ static void julie_symtab_insert(Julie_Symbol_Table *symtab, const Julie_String_I
     unsigned i;
 
     if (symtab->expansion == NULL) {
-        for (i = 0; i < JULIE_SYMTAB_SIZE; i += 1) {
-            if (symtab->syms[i] == NULL) {
-                symtab->syms[i] = sym;
-                symtab->vals[i] = val;
-                return;
-            }
+        if (symtab->used < JULIE_SYMTAB_SIZE) {
+            symtab->syms[symtab->used] = sym;
+            symtab->vals[symtab->used] = val;
+            symtab->used += 1;
+            return;
         }
 
         symtab->expansion = hash_table_make(Julie_String_ID, Julie_Value_Ptr, julie_string_id_hash);
@@ -2806,16 +2806,31 @@ insert_into_expansion:;
 static void julie_symtab_del(Julie_Symbol_Table *symtab, const Julie_String_ID sym) {
     unsigned i;
 
-    for (i = 0; i < JULIE_SYMTAB_SIZE; i += 1) {
-        if (symtab->syms[i] == sym) {
-            symtab->syms[i] = NULL;
-            symtab->vals[i] = NULL;
-            break;
-        }
-    }
+    if (symtab->expansion == NULL) {
+        for (i = 0; i < symtab->used; i += 1) {
+            if (symtab->syms[i] == sym) {
+                symtab->used -= 1;
 
-    if (symtab->expansion != NULL) {
-        hash_table_delete_with_hash(symtab->expansion, sym, JULIE_STRING_ID_HASH(sym));
+                symtab->syms[i]            = symtab->syms[symtab->used];
+                symtab->vals[i]            = symtab->vals[symtab->used];
+                symtab->syms[symtab->used] = NULL;
+                symtab->vals[symtab->used] = NULL;
+
+                break;
+            }
+        }
+    } else {
+        for (i = 0; i < JULIE_SYMTAB_SIZE; i += 1) {
+            if (symtab->syms[i] == sym) {
+                symtab->syms[i] = NULL;
+                symtab->vals[i] = NULL;
+                break;
+            }
+        }
+
+        if (symtab->expansion != NULL) {
+            hash_table_delete_with_hash(symtab->expansion, sym, JULIE_STRING_ID_HASH(sym));
+        }
     }
 }
 
@@ -2831,17 +2846,14 @@ static Julie_String_ID julie_find_value_in_symtabs(Julie_Interp *interp, const J
         symtab = julie_array_elem(interp->local_symtab_stack, i - 1);
 
         if (symtab->expansion == NULL) {
-            for (j = 0; j < JULIE_SYMTAB_SIZE; j += 1) {
+            for (j = 0; j < symtab->used; j += 1) {
                 sym = symtab->syms[j];
+                val = symtab->vals[j];
 
-                if (sym != NULL) {
-                    val = symtab->vals[j];
+                if (val == value
+                &&  !julie_symbol_starts_with_ampersand(interp, sym)) {
 
-                    if (val == value
-                    &&  !julie_symbol_starts_with_ampersand(interp, sym)) {
-
-                        return sym;
-                    }
+                    return sym;
                 }
             }
         } else {
@@ -2860,17 +2872,14 @@ static Julie_String_ID julie_find_value_in_symtabs(Julie_Interp *interp, const J
     symtab = interp->global_symtab;
 
     if (symtab->expansion == NULL) {
-        for (j = 0; j < JULIE_SYMTAB_SIZE; j += 1) {
+        for (j = 0; j < symtab->used; j += 1) {
             sym = symtab->syms[j];
+            val = symtab->vals[j];
 
-            if (sym != NULL) {
-                val = symtab->vals[j];
+            if (val == value
+            &&  !julie_symbol_starts_with_ampersand(interp, sym)) {
 
-                if (val == value
-                &&  !julie_symbol_starts_with_ampersand(interp, sym)) {
-
-                    return sym;
-                }
+                return sym;
             }
         }
     } else {
@@ -2935,17 +2944,18 @@ static void julie_clear_symtab(Julie_Interp *interp, Julie_Symbol_Table *symtab,
     collect = JULIE_ARRAY_INIT;
 
     if (symtab->expansion == NULL) {
-        for (i = 0; i < JULIE_SYMTAB_SIZE; i += 1) {
-            id = symtab->syms[i];
-            if (id != NULL) {
-                val = symtab->vals[i];
+        for (i = 0; i < symtab->used; i += 1) {
+            id  = symtab->syms[i];
+            val = symtab->vals[i];
 
-                if (!julie_symbol_starts_with_ampersand(interp, id)
-                ||  val->type == JULIE_BUILTIN_FN) {
+            if (!julie_symbol_starts_with_ampersand(interp, id)
+            ||  val->type == JULIE_BUILTIN_FN) {
 
-                    JULIE_ARRAY_PUSH(collect, val);
-                }
+                JULIE_ARRAY_PUSH(collect, val);
             }
+
+            symtab->syms[i] = NULL;
+            symtab->vals[i] = NULL;
         }
     } else {
         hash_table_traverse(symtab->expansion, id, valp) {
@@ -2957,7 +2967,11 @@ static void julie_clear_symtab(Julie_Interp *interp, Julie_Symbol_Table *symtab,
                 JULIE_ARRAY_PUSH(collect, val);
             }
         }
+        hash_table_free(symtab->expansion);
+        memset(symtab, 0, sizeof(*symtab));
     }
+
+    symtab->used = 0;
 
     ARRAY_FOR_EACH(collect, val) {
         if (!val->source_node) {
@@ -2966,12 +2980,6 @@ static void julie_clear_symtab(Julie_Interp *interp, Julie_Symbol_Table *symtab,
     }
 
     julie_array_free(collect);
-
-    if (symtab->expansion != NULL) {
-        hash_table_free(symtab->expansion);
-    }
-
-    memset(symtab, 0, sizeof(*symtab));
 }
 
 static Julie_Status julie_pop_local_symtab(Julie_Interp *interp, Julie_String_ID *err_sym, Julie_Value *survivor) {
@@ -2985,33 +2993,29 @@ static Julie_Status julie_pop_local_symtab(Julie_Interp *interp, Julie_String_ID
     JULIE_ASSERT(symtab != NULL);
 
     if (symtab->expansion == NULL) {
-        for (i = 0; i < JULIE_SYMTAB_SIZE; i += 1) {
-            id = symtab->syms[i];
-            if (id != NULL) {
-                val = symtab->vals[i];
+        for (i = 0; i < symtab->used; i += 1) {
+            id  = symtab->syms[i];
+            val = symtab->vals[i];
 
-                if (julie_symbol_starts_with_ampersand(interp, id)
-                &&  val->type != JULIE_BUILTIN_FN) {
+            if (julie_symbol_starts_with_ampersand(interp, id)
+            &&  val->type != JULIE_BUILTIN_FN) {
 
-                    JULIE_UNBORROW(val);
-                }
+                JULIE_UNBORROW(val);
             }
         }
 
-        for (i = 0; i < JULIE_SYMTAB_SIZE; i += 1) {
-            id = symtab->syms[i];
-            if (id != NULL) {
-                val = symtab->vals[i];
+        for (i = 0; i < symtab->used; i += 1) {
+            id  = symtab->syms[i];
+            val = symtab->vals[i];
 
-                if (!julie_symbol_starts_with_ampersand(interp, id)
-                ||  val->type == JULIE_BUILTIN_FN) {
+            if (!julie_symbol_starts_with_ampersand(interp, id)
+            ||  val->type == JULIE_BUILTIN_FN) {
 
-                    if (julie_borrows_outstanding(val)) {
-                        if (err_sym != NULL) {
-                            *err_sym = id;
-                        }
-                        return JULIE_ERR_RELEASE_WHILE_BORROWED;
+                if (julie_borrows_outstanding(val)) {
+                    if (err_sym != NULL) {
+                        *err_sym = id;
                     }
+                    return JULIE_ERR_RELEASE_WHILE_BORROWED;
                 }
             }
         }
