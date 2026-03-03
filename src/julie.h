@@ -4685,6 +4685,8 @@ static Julie_Status julie_builtin_add_assign(Julie_Interp *interp, Julie_Value *
     Julie_Value  *a;
     Julie_Value  *b;
 
+    *result = NULL;
+
     if (n_values != 2) {
         status = JULIE_ERR_ARITY;
         julie_make_arity_error(interp, expr, 2, n_values, 0);
@@ -4753,10 +4755,30 @@ static Julie_Status julie_builtin_sub(Julie_Interp *interp, Julie_Value *expr, u
     Julie_Value  *a;
     Julie_Value  *b;
 
-    status = julie_args(interp, expr, "nn", n_values, values, &a, &b);
-    if (status != JULIE_SUCCESS) {
-        *result = NULL;
+    *result = NULL;
+
+    if (n_values != 2) {
+        status = JULIE_ERR_ARITY;
+        julie_make_arity_error(interp, expr, 2, n_values, 0);
         goto out;
+    }
+
+    status = julie_eval(interp, values[0], &a);
+    if (status != JULIE_SUCCESS) { goto out; }
+
+    status = julie_eval(interp, values[1], &b);
+    if (status != JULIE_SUCCESS) { goto out_free_a; }
+
+    if (!JULIE_TYPE_IS_NUMBER(a->type)) {
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[0], _JULIE_NUMBER, a->type);
+        goto out_free_ab;
+    }
+
+    if (!JULIE_TYPE_IS_NUMBER(b->type)) {
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[1], _JULIE_NUMBER, b->type);
+        goto out_free_ab;
     }
 
     if (a->type == JULIE_SINT && b->type == JULIE_SINT) {
@@ -4781,8 +4803,10 @@ static Julie_Status julie_builtin_sub(Julie_Interp *interp, Julie_Value *expr, u
         JULIE_ASSERT(0 && "bad number type");
     }
 
-    julie_free_value(interp, a);
+out_free_ab:;
     julie_free_value(interp, b);
+out_free_a:;
+    julie_free_value(interp, a);
 
 out:;
     return status;
@@ -4793,10 +4817,36 @@ static Julie_Status julie_builtin_sub_assign(Julie_Interp *interp, Julie_Value *
     Julie_Value  *a;
     Julie_Value  *b;
 
-    status = julie_args(interp, expr, "&nn", n_values, values, &a, &b);
-    if (status != JULIE_SUCCESS) {
-        *result = NULL;
+    *result = NULL;
+
+    if (n_values != 2) {
+        status = JULIE_ERR_ARITY;
+        julie_make_arity_error(interp, expr, 2, n_values, 0);
         goto out;
+    }
+
+    status = julie_eval(interp, values[0], &a);
+    if (status != JULIE_SUCCESS) { goto out; }
+
+    status = julie_eval(interp, values[1], &b);
+    if (status != JULIE_SUCCESS) { goto out_free_a; }
+
+    if (!JULIE_TYPE_IS_NUMBER(a->type)) {
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[0], _JULIE_NUMBER, a->type);
+        goto out_free_ab;
+    }
+
+    if (!a->owned) {
+        status = JULIE_ERR_NOT_LVAL;
+        julie_make_bind_error(interp, values[0], status, NULL);
+        goto out_free_a;
+    }
+
+    if (!JULIE_TYPE_IS_NUMBER(b->type)) {
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[1], _JULIE_NUMBER, b->type);
+        goto out_free_ab;
     }
 
     if (a->type == JULIE_SINT && b->type == JULIE_SINT) {
@@ -4823,8 +4873,10 @@ static Julie_Status julie_builtin_sub_assign(Julie_Interp *interp, Julie_Value *
 
     *result = julie_copy(interp, a);
 
-    julie_free_value(interp, a);
+out_free_ab:;
     julie_free_value(interp, b);
+out_free_a:;
+    julie_free_value(interp, a);
 
 out:;
     return status;
@@ -5600,16 +5652,30 @@ static Julie_Status julie_builtin_neq(Julie_Interp *interp, Julie_Value *expr, u
     Julie_Value  *a;
     Julie_Value  *b;
 
-    status = julie_args(interp, expr, "**", n_values, values, &a, &b);
+    if (n_values != 2) {
+        status = JULIE_ERR_ARITY;
+        julie_make_arity_error(interp, expr, 2, n_values, 0);
+        goto out;
+    }
+
+    status = julie_eval(interp, values[0], &a);
     if (status != JULIE_SUCCESS) {
         *result = NULL;
         goto out;
     }
 
+    status = julie_eval(interp, values[1], &b);
+    if (status != JULIE_SUCCESS) {
+        *result = NULL;
+        goto out_free_a;
+    }
+
+
     *result = julie_sint_value(interp, !julie_equal(a, b));
 
-    julie_free_value(interp, a);
     julie_free_value(interp, b);
+out_free_a:;
+    julie_free_value(interp, a);
 
 out:;
     return status;
@@ -5619,6 +5685,8 @@ static Julie_Status julie_builtin_lss(Julie_Interp *interp, Julie_Value *expr, u
     Julie_Status  status;
     Julie_Value  *a;
     Julie_Value  *b;
+
+    *result = NULL;
 
     if (n_values != 2) {
         status = JULIE_ERR_ARITY;
@@ -5680,10 +5748,30 @@ static Julie_Status julie_builtin_leq(Julie_Interp *interp, Julie_Value *expr, u
     Julie_Value  *a;
     Julie_Value  *b;
 
-    status = julie_args(interp, expr, "nn", n_values, values, &a, &b);
-    if (status != JULIE_SUCCESS) {
-        *result = NULL;
+    *result = NULL;
+
+    if (n_values != 2) {
+        status = JULIE_ERR_ARITY;
+        julie_make_arity_error(interp, expr, 2, n_values, 0);
         goto out;
+    }
+
+    status = julie_eval(interp, values[0], &a);
+    if (status != JULIE_SUCCESS) { goto out; }
+
+    status = julie_eval(interp, values[1], &b);
+    if (status != JULIE_SUCCESS) { goto out_free_a; }
+
+    if (!JULIE_TYPE_IS_NUMBER(a->type)) {
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[0], _JULIE_NUMBER, a->type);
+        goto out_free_ab;
+    }
+
+    if (!JULIE_TYPE_IS_NUMBER(b->type)) {
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[1], _JULIE_NUMBER, b->type);
+        goto out_free_ab;
     }
 
     if (a->type == JULIE_SINT && b->type == JULIE_SINT) {
@@ -5708,8 +5796,10 @@ static Julie_Status julie_builtin_leq(Julie_Interp *interp, Julie_Value *expr, u
         JULIE_ASSERT(0 && "bad number type");
     }
 
-    julie_free_value(interp, a);
+out_free_ab:;
     julie_free_value(interp, b);
+out_free_a:;
+    julie_free_value(interp, a);
 
 out:;
     return status;
@@ -5720,10 +5810,30 @@ static Julie_Status julie_builtin_gtr(Julie_Interp *interp, Julie_Value *expr, u
     Julie_Value  *a;
     Julie_Value  *b;
 
-    status = julie_args(interp, expr, "nn", n_values, values, &a, &b);
-    if (status != JULIE_SUCCESS) {
-        *result = NULL;
+    *result = NULL;
+
+    if (n_values != 2) {
+        status = JULIE_ERR_ARITY;
+        julie_make_arity_error(interp, expr, 2, n_values, 0);
         goto out;
+    }
+
+    status = julie_eval(interp, values[0], &a);
+    if (status != JULIE_SUCCESS) { goto out; }
+
+    status = julie_eval(interp, values[1], &b);
+    if (status != JULIE_SUCCESS) { goto out_free_a; }
+
+    if (!JULIE_TYPE_IS_NUMBER(a->type)) {
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[0], _JULIE_NUMBER, a->type);
+        goto out_free_ab;
+    }
+
+    if (!JULIE_TYPE_IS_NUMBER(b->type)) {
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[1], _JULIE_NUMBER, b->type);
+        goto out_free_ab;
     }
 
     if (a->type == JULIE_SINT && b->type == JULIE_SINT) {
@@ -5748,8 +5858,10 @@ static Julie_Status julie_builtin_gtr(Julie_Interp *interp, Julie_Value *expr, u
         JULIE_ASSERT(0 && "bad number type");
     }
 
-    julie_free_value(interp, a);
+out_free_ab:;
     julie_free_value(interp, b);
+out_free_a:;
+    julie_free_value(interp, a);
 
 out:;
     return status;
@@ -5760,10 +5872,30 @@ static Julie_Status julie_builtin_geq(Julie_Interp *interp, Julie_Value *expr, u
     Julie_Value  *a;
     Julie_Value  *b;
 
-    status = julie_args(interp, expr, "nn", n_values, values, &a, &b);
-    if (status != JULIE_SUCCESS) {
-        *result = NULL;
+    *result = NULL;
+
+    if (n_values != 2) {
+        status = JULIE_ERR_ARITY;
+        julie_make_arity_error(interp, expr, 2, n_values, 0);
         goto out;
+    }
+
+    status = julie_eval(interp, values[0], &a);
+    if (status != JULIE_SUCCESS) { goto out; }
+
+    status = julie_eval(interp, values[1], &b);
+    if (status != JULIE_SUCCESS) { goto out_free_a; }
+
+    if (!JULIE_TYPE_IS_NUMBER(a->type)) {
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[0], _JULIE_NUMBER, a->type);
+        goto out_free_ab;
+    }
+
+    if (!JULIE_TYPE_IS_NUMBER(b->type)) {
+        status = JULIE_ERR_TYPE;
+        julie_make_type_error(interp, values[1], _JULIE_NUMBER, b->type);
+        goto out_free_ab;
     }
 
     if (a->type == JULIE_SINT && b->type == JULIE_SINT) {
@@ -5788,8 +5920,10 @@ static Julie_Status julie_builtin_geq(Julie_Interp *interp, Julie_Value *expr, u
         JULIE_ASSERT(0 && "bad number type");
     }
 
-    julie_free_value(interp, a);
+out_free_ab:;
     julie_free_value(interp, b);
+out_free_a:;
+    julie_free_value(interp, a);
 
 out:;
     return status;
