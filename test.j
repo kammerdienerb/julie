@@ -9,7 +9,7 @@ l =
 
 v = "not captured"
 
-l
+(l)
 
 factorial =
     fn (n)
@@ -136,13 +136,12 @@ while (apply compare)
 
 c =
     fn ()
-        println
-            backtrace
+        println (backtrace)
 b =
     fn () (c)
 a =
     fn () (b)
-a
+(a)
 
 define-class Class
     'list : (list)

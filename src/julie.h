@@ -107,6 +107,7 @@ typedef struct Julie_Source_Value_Info_Struct {
     unsigned long long line;
     unsigned long long col;
     unsigned long long ind;
+    int                paren;
 } Julie_Source_Value_Info;
 
 typedef struct Julie_Backtrace_Entry_Struct Julie_Backtrace_Entry;
@@ -3650,6 +3651,7 @@ static Julie_Value *julie_push_list(Julie_Parse_Context *cxt) {
     info->ind     = cxt->ind;
     info->line    = cxt->line;
     info->col     = cxt->col;
+    info->paren   = 0;
 
     JULIE_ARRAY_SET_AUX(value->list, (void*)((unsigned long long)info | 1ull));
     JULIE_ARRAY_PUSH(cxt->interp->source_infos, info);
@@ -3695,6 +3697,7 @@ static Julie_Status julie_parse_next_value(Julie_Parse_Context *cxt, Julie_Value
     if (tk == JULIE_TK_LPAREN) {
         julie_push_list(cxt);
         val = top = julie_array_top(cxt->parse_stack);
+        julie_get_source_value_info(top)->paren = 1;
 
         cxt->col += tk_end - tk_start;
 
@@ -11211,7 +11214,6 @@ out:;
 static Julie_Status julie_invoke(Julie_Interp *interp, Julie_Value *expr, Julie_Value *fn, unsigned long long n_values, Julie_Value **values, Julie_Value **result) {
     Julie_Status             status;
     Julie_Apply_Context     *cxt;
-    unsigned long long       i;
     Julie_Source_Value_Info *source_info;
 
     cxt = julie_push_cxt(interp, expr);
@@ -11248,7 +11250,6 @@ static Julie_Status julie_apply(Julie_Interp *interp, Julie_Value *list, Julie_V
     Julie_String_ID          id;
     Julie_Value             *lookup;
     Julie_Value             *infix_arg_vals[2];
-    unsigned                 i;
     Julie_Source_Value_Info *source_info;
 
     status = JULIE_SUCCESS;
@@ -11349,11 +11350,12 @@ out:;
 }
 
 static Julie_Status julie_eval(Julie_Interp *interp, Julie_Value *value, Julie_Value **result) {
-    Julie_Status        status;
-    unsigned long long  list_len;
-    Julie_Value        *orig_value;
-    Julie_Value        *first;
-    Julie_String_ID     id;
+    Julie_Status             status;
+    unsigned long long       list_len;
+    Julie_Source_Value_Info *source_info;
+    Julie_Value             *orig_value;
+    Julie_Value             *first;
+    Julie_String_ID          id;
 
     status = JULIE_SUCCESS;
 
@@ -11375,16 +11377,23 @@ static Julie_Status julie_eval(Julie_Interp *interp, Julie_Value *value, Julie_V
         list_len = julie_array_len(value->list);
 
         if (unlikely(list_len <= 1)) {
-            if (list_len == 1) {
+            if (list_len == 1
+            &&  (source_info = julie_get_source_value_info(value)) != NULL
+            &&  !source_info->paren) {
+
                 first = julie_array_elem(value->list, 0);
 
-                if (JULIE_TYPE_IS_NUMBER(first->type)
-                ||  first->type == JULIE_STRING
-                ||  first->type == JULIE_NIL) {
-
-                    value = first;
-                    goto copy;
+                switch (first->type) {
+                    case JULIE_UINT:
+                    case JULIE_SINT:
+                    case JULIE_FLOAT:
+                    case JULIE_STRING:
+                        value = first;
+                        goto copy;
                 }
+
+                status = julie_eval(interp, first, result);
+                goto out;
             } else if (list_len == 0) {
                 value = julie_nil_value(interp);
                 goto copy;
@@ -11394,6 +11403,7 @@ static Julie_Status julie_eval(Julie_Interp *interp, Julie_Value *value, Julie_V
         status = julie_apply(interp, value, result);
 
     } else {
+copy:;
         if (value->type == JULIE_SYMBOL) {
             id = julie_value_string_id(interp, value);
 
@@ -11406,7 +11416,6 @@ static Julie_Status julie_eval(Julie_Interp *interp, Julie_Value *value, Julie_V
             }
         }
 
-copy:;
         *result = julie_copy(interp, value);
     }
 
