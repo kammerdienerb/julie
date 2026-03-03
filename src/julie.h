@@ -112,8 +112,9 @@ typedef struct Julie_Source_Value_Info_Struct {
 typedef struct Julie_Backtrace_Entry_Struct Julie_Backtrace_Entry;
 
 struct Julie_Apply_Context_Struct {
-    Julie_Array           *args;
-    Julie_Backtrace_Entry  bt_entry;
+    unsigned                n_args;
+    Julie_Value           **args;
+    Julie_Backtrace_Entry   bt_entry;
 };
 typedef struct Julie_Apply_Context_Struct Julie_Apply_Context;
 
@@ -1543,7 +1544,7 @@ static Julie_Apply_Context *julie_push_cxt(Julie_Interp *interp, Julie_Value *va
 
     if (unlikely(interp->apply_depth > julie_array_len(interp->apply_contexts))) {
         cxt = malloc(sizeof(*cxt));
-        cxt->args = JULIE_ARRAY_INIT;
+        memset(cxt, 0, sizeof(*cxt));
         JULIE_ARRAY_PUSH(interp->apply_contexts, cxt);
     } else {
         cxt = julie_array_elem(interp->apply_contexts, interp->apply_depth - 1);
@@ -1559,9 +1560,7 @@ static void julie_pop_cxt(Julie_Interp *interp) {
 
     cxt = julie_array_elem(interp->apply_contexts, interp->apply_depth - 1);
 
-    if (likely(cxt->args != NULL)) {
-        cxt->args->len = 0;
-    }
+    cxt->n_args = 0;
 
     interp->apply_depth -= 1;
 }
@@ -10899,8 +10898,8 @@ static Julie_Status _julie_invoke_with_cxt(Julie_Interp *interp, Julie_Apply_Con
 
     status = JULIE_SUCCESS;
 
-    n_values = julie_array_len(cxt->args);
-    values   = (Julie_Value**)(cxt->args == JULIE_ARRAY_INIT ? NULL : cxt->args->data);
+    n_values = cxt->n_args;
+    values   = cxt->args;
 
     /* Evaluate function application. */
     switch (fn->type) {
@@ -11096,9 +11095,8 @@ static Julie_Status julie_invoke(Julie_Interp *interp, Julie_Value *expr, Julie_
     }
     cxt->bt_entry.fn = fn;
 
-    for (i = 0; i < n_values; i += 1) {
-        JULIE_ARRAY_PUSH(cxt->args, values[i]);
-    }
+    cxt->args   = values;
+    cxt->n_args = n_values;
 
     status = _julie_invoke_with_cxt(interp, cxt, expr, fn, result);
 
@@ -11115,6 +11113,7 @@ static Julie_Status julie_apply(Julie_Interp *interp, Julie_Value *list, Julie_V
     Julie_Value             *maybe_infix_fn;
     Julie_String_ID          id;
     Julie_Value             *lookup;
+    Julie_Value             *infix_arg_vals[2];
     unsigned                 i;
     Julie_Source_Value_Info *source_info;
 
@@ -11153,8 +11152,12 @@ static Julie_Status julie_apply(Julie_Interp *interp, Julie_Value *list, Julie_V
                     fn = lookup;
 infix_args:;
                     cxt->bt_entry.fn = fn;
-                    JULIE_ARRAY_PUSH(cxt->args, julie_array_elem(list->list, 0));
-                    JULIE_ARRAY_PUSH(cxt->args, julie_array_elem(list->list, 2));
+
+                    infix_arg_vals[0] = julie_array_elem(list->list, 0);
+                    infix_arg_vals[1] = julie_array_elem(list->list, 2);
+
+                    cxt->args   = infix_arg_vals;
+                    cxt->n_args = 2;
 
                     if (list->source_node) {
                         XOR_SWAP_PTR(list->list->data[0], list->list->data[1]);
@@ -11178,9 +11181,8 @@ infix_args:;
     }
     cxt->bt_entry.fn = fn;
 
-    for (i = 1; i < list_len; i += 1) {
-        JULIE_ARRAY_PUSH(cxt->args, julie_array_elem(list->list, i));
-    }
+    cxt->args   = ((Julie_Value**)list->list->data) + 1;
+    cxt->n_args = julie_array_len(list->list) - 1;
 
 invoke:;
     /* Evaluate function application. */
@@ -11193,7 +11195,7 @@ invoke:;
             status = _julie_invoke_with_cxt(interp, cxt, list, fn, result);
             break;
         default:
-            if (likely(julie_array_len(cxt->args) == 0)) {
+            if (likely(cxt->n_args == 0)) {
                 status = julie_eval(interp, fn, result);
             } else {
                 status = JULIE_ERR_BAD_APPLY;
@@ -11762,7 +11764,6 @@ void julie_free(Julie_Interp *interp) {
     julie_array_free(interp->source_infos);
 
     ARRAY_FOR_EACH(interp->apply_contexts, cxt) {
-        julie_array_free(cxt->args);
         free(cxt);
     }
     julie_array_free(interp->apply_contexts);
