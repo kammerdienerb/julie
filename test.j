@@ -166,7 +166,7 @@ makes-error =
     fn ()
         x = 1
         select x
-            error "oopsie poopsie"
+            error "this is a dynamic error value"
             ()
 
 err = (makes-error)
