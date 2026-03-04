@@ -196,24 +196,9 @@ static void on_julie_error(Julie_Error_Info *info) {
                 free(s);
             }
         }
-
-
-
-/*         s = julie_to_string(info->interp, info->thrown.error_value, JULIE_NO_QUOTE); */
-/*         fprintf(stderr, "%s\n%s%s", reset, red, s); */
-/*         free(s); */
-
-/*         fprintf(stderr, "%s%s:%llu:%llu:%s %serror: %s", */
-/*                 blue, */
-/*                 info->file_id == NULL ? "<?>" : julie_get_cstring(info->file_id), */
-/*                 info->line, */
-/*                 info->col, */
-/*                 reset, */
-/*                 red, */
-/*                 julie_error_string(status)); */
     }
 
     julie_free_error_info(info);
 
-    exit(status);
+/*     exit(status); */
 }

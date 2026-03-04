@@ -1542,8 +1542,8 @@ static void julie_del_value(Julie_Interp *interp, Julie_Value *value) {
 #define JULIE_NEW(_interp)         (julie_new_value((_interp)))
 #define JULIE_DEL(_interp, _value) (julie_del_value((_interp), (_value)))
 
-// #define JULIE_NEW()       (malloc(sizeof(Julie_Value)))
-// #define JULIE_DEL(_value) (free((_value)))
+// #define JULIE_NEW(_interp)         (malloc(sizeof(Julie_Value)))
+// #define JULIE_DEL(_interp, _value) (free((_value)))
 
 
 static Julie_Apply_Context *julie_push_cxt(Julie_Interp *interp, Julie_Value *value) {
@@ -1805,6 +1805,7 @@ static Julie_Value *_julie_copy_real(Julie_Interp *interp, Julie_Value *value, i
             break;
 
         case JULIE_OBJECT:
+        case JULIE_ERROR:
             obj = copy->object;
             copy->object = hash_table_make_e(Julie_Value_Ptr, Julie_Value_Ptr, julie_value_hash, julie_equal);
             hash_table_traverse(obj, key, val) {
@@ -1890,6 +1891,7 @@ static Julie_Value *julie_copy_sandboxed_value(Julie_Interp *dst_interp, Julie_V
             break;
 
         case JULIE_OBJECT:
+        case JULIE_ERROR:
             obj = copy->object;
             copy->object = hash_table_make_e(Julie_Value_Ptr, Julie_Value_Ptr, julie_value_hash, julie_equal);
             hash_table_traverse(obj, key, val) {
@@ -1982,6 +1984,7 @@ done_string:;
             break;
 
         case JULIE_OBJECT:
+        case JULIE_ERROR:
             hash_table_traverse((_Julie_Object)value->object, key, val) {
                 _julie_free_value(interp, key, 1, force, free_source_nodes, NULL);
                 _julie_free_value(interp, *val, 1, force, free_source_nodes, survivor);
@@ -2058,6 +2061,7 @@ static int julie_borrows_to_subvalues_outstanding(Julie_Value *top, Julie_Value 
             break;
 
         case JULIE_OBJECT:
+        case JULIE_ERROR:
             hash_table_traverse((_Julie_Object)value->object, key, val) {
                 (void)key;
                 if (julie_borrows_to_subvalues_outstanding(top, *val)) {
@@ -2199,7 +2203,7 @@ Julie_Value *julie_error_value(Julie_Interp *interp) {
     v->type         = JULIE_ERROR;
     v->object       = hash_table_make_e(Julie_Value_Ptr, Julie_Value_Ptr, julie_value_hash, julie_equal);
     v->tag          = 0;
-    v->source_node  = 1;
+    v->source_node  = 0;
     v->owned        = 0;
     v->borrow_count = 0;
 
@@ -4407,6 +4411,7 @@ static Julie_Status julie_builtin_id(Julie_Interp *interp, Julie_Value *expr, un
         case JULIE_STRING:
         case JULIE_LIST:
         case JULIE_OBJECT:
+        case JULIE_ERROR:
             status = julie_eval(interp, value, &ev);
             if (status != JULIE_SUCCESS) {
                 *result = NULL;
@@ -11631,6 +11636,7 @@ out:;
     if (throw_err && *result != NULL && (*result)->type == JULIE_ERROR) {
         julie_make_runtime_error(interp, value, *result);
         status = JULIE_ERR_TYPE;
+        julie_free_value(interp, *result);
         *result = NULL;
     }
 
