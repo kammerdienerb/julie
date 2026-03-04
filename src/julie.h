@@ -11633,9 +11633,9 @@ copy:;
 
 out:;
 
-    if (throw_err && *result != NULL && (*result)->type == JULIE_ERROR) {
+    if (status == JULIE_SUCCESS && throw_err && *result != NULL && (*result)->type == JULIE_ERROR) {
         julie_make_runtime_error(interp, value, *result);
-        status = JULIE_ERR_TYPE;
+        status = JULIE_ERR_ERROR_VALUE;
         julie_free_value(interp, *result);
         *result = NULL;
     }
