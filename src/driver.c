@@ -200,5 +200,5 @@ static void on_julie_error(Julie_Error_Info *info) {
 
     julie_free_error_info(info);
 
-/*     exit(status); */
+    exit(status);
 }
