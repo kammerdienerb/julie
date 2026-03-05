@@ -3157,6 +3157,7 @@ static Julie_Status _julie_bind_existing(Julie_Interp           *interp,
     }
 
     julie_replace_value(interp, existing, *valuep);
+    *valuep = existing;
 
     return JULIE_SUCCESS;
 }
