@@ -7037,7 +7037,6 @@ static Julie_Status julie_builtin_insert(Julie_Interp *interp, Julie_Value *expr
             *result = NULL;
             status  = JULIE_ERR_MODIFY_WHILE_ITER;
             julie_make_bind_error(interp, expr, status, values[0]->type == JULIE_SYMBOL ? values[0]->string_id : NULL);
-            julie_free_value(interp, val);
             goto out_free_list;
         }
     }
