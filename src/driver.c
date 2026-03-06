@@ -8,6 +8,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <libgen.h>
+#include <time.h>
 
 Julie_Interp *interp;
 
@@ -31,6 +32,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    srandom(time(NULL));
 
     interp = julie_init_interp();
     julie_set_error_callback(interp, on_julie_error);
@@ -200,5 +202,5 @@ static void on_julie_error(Julie_Error_Info *info) {
 
     julie_free_error_info(info);
 
-    exit(status);
+/*     exit(status); */
 }
