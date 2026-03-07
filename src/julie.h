@@ -2035,6 +2035,9 @@ static Julie_Value *_julie_attach_value(Julie_Interp *dst, Julie_Value *detached
 
     switch (detached->type) {
         case JULIE_STRING:
+            /* Good to go. Malloc'd string. */
+            break;
+
         case JULIE_SYMBOL:
             copy->tag       = JULIE_STRING_TYPE_INTERN;
             copy->string_id = julie_get_string_id(dst, detached->cstring);
