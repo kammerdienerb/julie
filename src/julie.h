@@ -2154,8 +2154,10 @@ static void julie_free_detached_value(Julie_Value *value) {
                 julie_free_detached_value(it);
             }
             source_info = julie_get_source_value_info(value);
-            free(source_info->file_name);
-            free(source_info);
+            if (source_info != NULL) {
+                free(source_info->file_name);
+                free(source_info);
+            }
             julie_array_free(value->list);
             break;
 
