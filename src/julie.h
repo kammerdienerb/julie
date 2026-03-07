@@ -250,8 +250,8 @@ Julie_Status julie_load_package(Julie_Interp *interp, const char *name, Julie_Va
 Julie_Status julie_add_package_directory(Julie_Interp *interp, const char *path);
 Julie_Status julie_parse(Julie_Interp *interp, const char *str, int size);
 Julie_Status julie_interp(Julie_Interp *interp);
+Julie_Status julie_eval(Julie_Interp *interp, Julie_Value *value, Julie_Value **result);
 void julie_free(Julie_Interp *interp);
-
 
 
 char *julie_get_pretty_error_string(Julie_Error_Info *info, const char *blue, const char *red, const char *normal);
@@ -295,6 +295,8 @@ Julie_Status julie_object_delete_field(Julie_Interp *interp, Julie_Value *object
 void julie_free_value(Julie_Interp *interp, Julie_Value *value);
 void julie_force_free_value(Julie_Interp *interp, Julie_Value *value);
 void julie_free_and_reuse_value(Julie_Interp *interp, Julie_Value *value);
+Julie_Value *julie_copy(Julie_Interp *interp, Julie_Value *value);
+Julie_Value *julie_force_copy(Julie_Interp *interp, Julie_Value *value);
 
 Julie_Status julie_bind(Julie_Interp *interp, const Julie_String_ID name, Julie_Value **valuep);
 Julie_Status julie_bind_local(Julie_Interp *interp, const Julie_String_ID name, Julie_Value **valuep);
@@ -357,15 +359,15 @@ struct Julie_Array_Struct {
 #define JULIE_ARRAY_INIT        ((Julie_Array*)NULL)
 #define JULIE_ARRAY_INITIAL_CAP (16)
 
-static void julie_array_free(Julie_Array *array) {
+static inline void julie_array_free(Julie_Array *array) {
     if (array != NULL) { free(array); }
 }
 
-static unsigned long long julie_array_len(Julie_Array *array) {
+static inline unsigned long long julie_array_len(Julie_Array *array) {
     return array == NULL ? 0 : array->len;
 }
 
-static Julie_Array *julie_array_reserve(Julie_Array *array, unsigned long long cap) {
+static inline Julie_Array *julie_array_reserve(Julie_Array *array, unsigned long long cap) {
     if (cap == 0) { return array; }
 
     if (cap < JULIE_ARRAY_INITIAL_CAP) {
@@ -388,7 +390,7 @@ static Julie_Array *julie_array_reserve(Julie_Array *array, unsigned long long c
     return array;
 }
 
-static Julie_Array *julie_array_set_aux(Julie_Array *array, void *aux) {
+static inline Julie_Array *julie_array_set_aux(Julie_Array *array, void *aux) {
     if (array == NULL) {
         array = malloc(sizeof(Julie_Array) + (JULIE_ARRAY_INITIAL_CAP * sizeof(void*)));
         array->len = 0;
@@ -398,11 +400,11 @@ static Julie_Array *julie_array_set_aux(Julie_Array *array, void *aux) {
     return array;
 }
 
-static void *julie_array_get_aux(Julie_Array *array) {
+static inline void *julie_array_get_aux(Julie_Array *array) {
     return array == NULL ? NULL : array->aux;
 }
 
-static Julie_Array *julie_array_push(Julie_Array *array, void *item) {
+static inline Julie_Array *julie_array_push(Julie_Array *array, void *item) {
     if (unlikely(array == NULL)) {
         array = malloc(sizeof(Julie_Array) + (JULIE_ARRAY_INITIAL_CAP * sizeof(void*)));
         array->len = 0;
@@ -423,7 +425,7 @@ push:;
     return array;
 }
 
-static Julie_Array *julie_array_insert(Julie_Array *array, void *item, unsigned long long idx) {
+static inline Julie_Array *julie_array_insert(Julie_Array *array, void *item, unsigned long long idx) {
     if (unlikely(array == NULL)) {
         array = malloc(sizeof(Julie_Array) + (JULIE_ARRAY_INITIAL_CAP * sizeof(void*)));
         array->len = 0;
@@ -448,12 +450,12 @@ push:;
     return array;
 }
 
-static void *julie_array_elem(Julie_Array *array, unsigned idx) {
+static inline void *julie_array_elem(Julie_Array *array, unsigned idx) {
     JULIE_ASSERT(array != NULL && idx < array->len);
     return array->data[idx];
 }
 
-static void *julie_array_top(Julie_Array *array) {
+static inline void *julie_array_top(Julie_Array *array) {
     if (array == NULL || array->len == 0) {
         return NULL;
     }
@@ -461,7 +463,7 @@ static void *julie_array_top(Julie_Array *array) {
     return array->data[array->len - 1];
 }
 
-static void *julie_array_pop(Julie_Array *array) {
+static inline void *julie_array_pop(Julie_Array *array) {
     void *r;
 
     r = NULL;
@@ -474,7 +476,7 @@ static void *julie_array_pop(Julie_Array *array) {
     return r;
 }
 
-static void julie_array_erase(Julie_Array *array, unsigned idx) {
+static inline void julie_array_erase(Julie_Array *array, unsigned idx) {
     if (array == NULL || idx >= array->len) {
         return;
     }
@@ -1911,11 +1913,11 @@ static Julie_Value *_julie_copy_real(Julie_Interp *interp, Julie_Value *value, i
     return copy;
 }
 
-static Julie_Value *julie_copy(Julie_Interp *interp, Julie_Value *value) {
+Julie_Value *julie_copy(Julie_Interp *interp, Julie_Value *value) {
     return _julie_copy(interp, value, 0);
 }
 
-static Julie_Value *julie_force_copy(Julie_Interp *interp, Julie_Value *value) {
+Julie_Value *julie_force_copy(Julie_Interp *interp, Julie_Value *value) {
     return _julie_copy(interp, value, 1);
 }
 
@@ -4456,10 +4458,10 @@ Julie_Status julie_parse(Julie_Interp *interp, const char *str, int size) {
  *                       Builtins                        *
  *********************************************************/
 
-static Julie_Status julie_eval(Julie_Interp *interp, Julie_Value *value, Julie_Value **result);
+Julie_Status julie_eval(Julie_Interp *interp, Julie_Value *value, Julie_Value **result);
 static Julie_Status julie_eval_no_throw(Julie_Interp *interp, Julie_Value *value, Julie_Value **result);
 static Julie_Status julie_invoke(Julie_Interp *interp, Julie_Value *list, Julie_Value *fn, unsigned long long n_values, Julie_Value **values, Julie_Value **result);
-static Julie_Value *julie_copy(Julie_Interp *interp, Julie_Value *value);
+Julie_Value *julie_copy(Julie_Interp *interp, Julie_Value *value);
 
 static unsigned _julie_arg_legend_get_arity(const char *legend) {
     unsigned legend_len;
@@ -12266,7 +12268,7 @@ out:;
  *                        Interp                         *
  *********************************************************/
 
-static Julie_Status julie_eval(Julie_Interp *interp, Julie_Value *value, Julie_Value **result);
+Julie_Status julie_eval(Julie_Interp *interp, Julie_Value *value, Julie_Value **result);
 
 static Julie_Status _julie_invoke_with_cxt(Julie_Interp *interp, Julie_Apply_Context *cxt, Julie_Value *expr, Julie_Value *fn, Julie_Value **result) {
     Julie_Status              status;
@@ -12703,7 +12705,7 @@ out:;
     return status;
 }
 
-static Julie_Status julie_eval(Julie_Interp *interp, Julie_Value *value, Julie_Value **result) {
+Julie_Status julie_eval(Julie_Interp *interp, Julie_Value *value, Julie_Value **result) {
     return _julie_eval(interp, value, result, 1);
 }
 
