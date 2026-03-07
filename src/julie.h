@@ -12440,7 +12440,7 @@ static Julie_Status julie_invoke(Julie_Interp *interp, Julie_Value *expr, Julie_
     if (likely(source_info != NULL)
     ||  (source_info = julie_get_top_source_value_info(interp)) != NULL) {
 
-        cxt->bt_entry.file_id = julie_get_string_id(interp, source_info->file_name);
+        cxt->bt_entry.file_id = source_info->file_id;
         cxt->bt_entry.line    = source_info->line;
         cxt->bt_entry.col     = source_info->col;
     } else {
