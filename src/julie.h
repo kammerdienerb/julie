@@ -2205,17 +2205,6 @@ static void julie_free_detached_value(Julie_Value *value) {
     free(value);
 }
 
-static void julie_free_detached_bindings(Julie_Detached_Binding *bindings, unsigned n) {
-    unsigned i;
-    if (bindings == NULL) { return; }
-    for (i = 0; i < n; i += 1) {
-        free(bindings[i].name);
-        julie_free_detached_value(bindings[i].value);
-    }
-    free(bindings);
-}
-
-
 static void _julie_free_value_real(Julie_Interp * interp, Julie_Value *value, int free_root, int force, int free_source_nodes, Julie_Value *survivor);
 
 __attribute__((always_inline))
