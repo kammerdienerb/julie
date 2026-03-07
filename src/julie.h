@@ -317,24 +317,237 @@ Julie_Status julie_map_file_into_readonly_memory(const char *path, const char **
 const char *julie_error_string(Julie_Status error);
 const char *julie_type_string(Julie_Type type);
 
-#ifdef JULIE_IMPL
 
 #include <assert.h>
+#include <stdlib.h>
+#include <string.h>
 
 #ifndef JULIE_ASSERTIONS
 #define JULIE_ASSERTIONS (1)
 #endif
-
 #if JULIE_ASSERTIONS
 #define JULIE_ASSERT(...) assert(__VA_ARGS__)
 #else
 #define JULIE_ASSERT(...)
 #endif
 
-#include <stdlib.h>
+#ifndef likely
+#define likely(x)   (__builtin_expect(!!(x), 1))
+#endif
+#ifndef unlikely
+#define unlikely(x) (__builtin_expect(!!(x), 0))
+#endif
+
+
+struct Julie_String_Struct {
+    char               *chars;
+    unsigned long long  len;
+    unsigned long long  hash;
+    unsigned            tag;
+};
+
+
+struct Julie_Array_Struct {
+    unsigned long long  len;
+    unsigned long long  cap;
+    void               *aux;
+    void               *data[];
+};
+
+#define JULIE_ARRAY_INIT        ((Julie_Array*)NULL)
+#define JULIE_ARRAY_INITIAL_CAP (16)
+
+static void julie_array_free(Julie_Array *array) {
+    if (array != NULL) { free(array); }
+}
+
+static unsigned long long julie_array_len(Julie_Array *array) {
+    return array == NULL ? 0 : array->len;
+}
+
+static Julie_Array *julie_array_reserve(Julie_Array *array, unsigned long long cap) {
+    if (cap == 0) { return array; }
+
+    if (cap < JULIE_ARRAY_INITIAL_CAP) {
+        cap = JULIE_ARRAY_INITIAL_CAP;
+    }
+
+    if (array == NULL) {
+        array = malloc(sizeof(Julie_Array) + (cap * sizeof(void*)));
+        array->len = 0;
+        array->cap = cap;
+        array->aux = NULL;
+        return array;
+    }
+
+    if (array->cap >= cap) { return array; }
+
+    array->cap = cap;
+    array      = realloc(array, sizeof(Julie_Array) + (array->cap * sizeof(void*)));
+
+    return array;
+}
+
+static Julie_Array *julie_array_set_aux(Julie_Array *array, void *aux) {
+    if (array == NULL) {
+        array = malloc(sizeof(Julie_Array) + (JULIE_ARRAY_INITIAL_CAP * sizeof(void*)));
+        array->len = 0;
+        array->cap = JULIE_ARRAY_INITIAL_CAP;
+    }
+    array->aux = aux;
+    return array;
+}
+
+static void *julie_array_get_aux(Julie_Array *array) {
+    return array == NULL ? NULL : array->aux;
+}
+
+static Julie_Array *julie_array_push(Julie_Array *array, void *item) {
+    if (unlikely(array == NULL)) {
+        array = malloc(sizeof(Julie_Array) + (JULIE_ARRAY_INITIAL_CAP * sizeof(void*)));
+        array->len = 0;
+        array->cap = JULIE_ARRAY_INITIAL_CAP;
+        array->aux = NULL;
+        goto push;
+    }
+
+    if (unlikely(array->len >= array->cap)) {
+        array->cap += ((array->cap >> 1) > 0) ? (array->cap >> 1) : 1;
+        array       = realloc(array, sizeof(Julie_Array) + (array->cap * sizeof(void*)));
+    }
+
+push:;
+    array->data[array->len] = item;
+    array->len += 1;
+
+    return array;
+}
+
+static Julie_Array *julie_array_insert(Julie_Array *array, void *item, unsigned long long idx) {
+    if (unlikely(array == NULL)) {
+        array = malloc(sizeof(Julie_Array) + (JULIE_ARRAY_INITIAL_CAP * sizeof(void*)));
+        array->len = 0;
+        array->cap = JULIE_ARRAY_INITIAL_CAP;
+        array->aux = NULL;
+        goto push;
+    }
+
+    if (unlikely(array->len >= array->cap)) {
+        array->cap += ((array->cap >> 1) > 0) ? (array->cap >> 1) : 1;
+        array       = realloc(array, sizeof(Julie_Array) + (array->cap * sizeof(void*)));
+    }
+
+push:;
+    JULIE_ASSERT(idx <= array->cap);
+
+    memmove(array->data + idx + 1, array->data + idx, (array->len - idx) * sizeof(void*));
+
+    array->data[idx] = item;
+    array->len += 1;
+
+    return array;
+}
+
+static void *julie_array_elem(Julie_Array *array, unsigned idx) {
+    JULIE_ASSERT(array != NULL && idx < array->len);
+    return array->data[idx];
+}
+
+static void *julie_array_top(Julie_Array *array) {
+    if (array == NULL || array->len == 0) {
+        return NULL;
+    }
+
+    return array->data[array->len - 1];
+}
+
+static void *julie_array_pop(Julie_Array *array) {
+    void *r;
+
+    r = NULL;
+
+    if (array != NULL && array->len > 0) {
+        r = julie_array_top(array);
+        array->len -= 1;
+    }
+
+    return r;
+}
+
+static void julie_array_erase(Julie_Array *array, unsigned idx) {
+    if (array == NULL || idx >= array->len) {
+        return;
+    }
+
+    memmove(array->data + idx, array->data + idx + 1, (array->len - idx - 1) * sizeof(void*));
+
+    array->len -= 1;
+}
+
+#define JULIE_ARRAY_RESERVE(_arrayp, _cap)       ((_arrayp) = julie_array_reserve((_arrayp), (_cap)))
+#define JULIE_ARRAY_PUSH(_arrayp, _item)         ((_arrayp) = julie_array_push((_arrayp), (_item)))
+#define JULIE_ARRAY_INSERT(_arrayp, _item, _idx) ((_arrayp) = julie_array_insert((_arrayp), (_item), (_idx)))
+#define JULIE_ARRAY_SET_AUX(_arrayp, _aux)       ((_arrayp) = julie_array_set_aux((_arrayp), (_aux)))
+
+#define ARRAY_FOR_EACH(_arrayp, _it)                                                                 \
+    for (unsigned long long _each_i = 0;                                                             \
+         ((_arrayp) != NULL && _each_i < (_arrayp)->len && (((_it) = (_arrayp)->data[_each_i]), 1)); \
+         _each_i += 1)
+
+
+enum {
+    JULIE_STRING_TYPE_EMBED = 0,
+    JULIE_STRING_TYPE_INTERN,
+    JULIE_STRING_TYPE_MALLOC,
+
+    JULIE_INFIX_FN,
+    JULIE_REARRANGED_INFIX_SOURCE_LIST,
+};
+
+#define JULIE_MAX_BC_POT (32ull)
+#define JULIE_EMBEDDED_STRING_MAX_SIZE (sizeof(unsigned long long))
+
+struct Julie_Value_Struct {
+    union {
+        struct {
+            union {
+                long long           sint;
+                unsigned long long  uint;
+                double              floating;
+                Julie_String_ID     string_id;
+                char               *cstring;
+                void               *object;
+                Julie_Array        *list;
+                Julie_Fn            builtin_fn;
+                Julie_Actor        *actor;
+
+                Julie_Value        *free_list_next;
+            };
+
+            unsigned char tag;
+            unsigned char source_node;
+            unsigned char type;
+            unsigned char owned;
+            unsigned int  borrow_count;
+        };
+        struct {
+            /* Last byte of embedded_string_bytes aliases with tag, which should be 0 when
+               tag == JULIE_STRING_TYPE_EMBED, giving us an extra byte and natural NULL
+               terminator. */
+            char          embedded_string_bytes[JULIE_EMBEDDED_STRING_MAX_SIZE + 1];
+            unsigned char _source_node;
+            unsigned char _type;
+            unsigned char _owned;
+            unsigned int  _borrow_count;
+        };
+    };
+};
+
+
+#ifdef JULIE_IMPL
+
 #include <stdio.h>
 #include <stdint.h>
-#include <string.h> /* strlen, memcpy, memset, memcmp */
 #include <stdarg.h>
 #include <alloca.h>
 #include <math.h>
@@ -371,13 +584,6 @@ const char *julie_type_string(Julie_Type type);
     a = (void*)(((unsigned long long)(a)) ^ ((unsigned long long)(b))); \
 } while (0);
 
-#define likely(x)   (__builtin_expect(!!(x), 1))
-#define unlikely(x) (__builtin_expect(!!(x), 0))
-
-
-/*********************************************************
- *                    Data Structures                    *
- *********************************************************/
 
 #define hash_table_make(K_T, V_T, HASH) (CAT2(hash_table(K_T, V_T), _make)((HASH), NULL))
 #define hash_table_make_e(K_T, V_T, HASH, EQU) (CAT2(hash_table(K_T, V_T), _make)((HASH), (EQU)))
@@ -1176,160 +1382,6 @@ static _SORT_R_INLINE void sort_r_simple(void *base, size_t nel, size_t w,
 #undef _SORT_R_BSD
 
 
-struct Julie_Array_Struct {
-    unsigned long long  len;
-    unsigned long long  cap;
-    void               *aux;
-    void               *data[];
-};
-
-#define JULIE_ARRAY_INIT        ((Julie_Array*)NULL)
-#define JULIE_ARRAY_INITIAL_CAP (16)
-
-static void julie_array_free(Julie_Array *array) {
-    if (array != NULL) { free(array); }
-}
-
-static unsigned long long julie_array_len(Julie_Array *array) {
-    return array == NULL ? 0 : array->len;
-}
-
-static Julie_Array *julie_array_reserve(Julie_Array *array, unsigned long long cap) {
-    if (cap == 0) { return array; }
-
-    if (cap < JULIE_ARRAY_INITIAL_CAP) {
-        cap = JULIE_ARRAY_INITIAL_CAP;
-    }
-
-    if (array == NULL) {
-        array = malloc(sizeof(Julie_Array) + (cap * sizeof(void*)));
-        array->len = 0;
-        array->cap = cap;
-        array->aux = NULL;
-        return array;
-    }
-
-    if (array->cap >= cap) { return array; }
-
-    array->cap = cap;
-    array      = realloc(array, sizeof(Julie_Array) + (array->cap * sizeof(void*)));
-
-    return array;
-}
-
-static Julie_Array *julie_array_set_aux(Julie_Array *array, void *aux) {
-    if (array == NULL) {
-        array = malloc(sizeof(Julie_Array) + (JULIE_ARRAY_INITIAL_CAP * sizeof(void*)));
-        array->len = 0;
-        array->cap = JULIE_ARRAY_INITIAL_CAP;
-    }
-    array->aux = aux;
-    return array;
-}
-
-static void *julie_array_get_aux(Julie_Array *array) {
-    return array == NULL ? NULL : array->aux;
-}
-
-static Julie_Array *julie_array_push(Julie_Array *array, void *item) {
-    if (unlikely(array == NULL)) {
-        array = malloc(sizeof(Julie_Array) + (JULIE_ARRAY_INITIAL_CAP * sizeof(void*)));
-        array->len = 0;
-        array->cap = JULIE_ARRAY_INITIAL_CAP;
-        array->aux = NULL;
-        goto push;
-    }
-
-    if (unlikely(array->len >= array->cap)) {
-        array->cap += ((array->cap >> 1) > 0) ? (array->cap >> 1) : 1;
-        array       = realloc(array, sizeof(Julie_Array) + (array->cap * sizeof(void*)));
-    }
-
-push:;
-    array->data[array->len] = item;
-    array->len += 1;
-
-    return array;
-}
-
-static Julie_Array *julie_array_insert(Julie_Array *array, void *item, unsigned long long idx) {
-    if (unlikely(array == NULL)) {
-        array = malloc(sizeof(Julie_Array) + (JULIE_ARRAY_INITIAL_CAP * sizeof(void*)));
-        array->len = 0;
-        array->cap = JULIE_ARRAY_INITIAL_CAP;
-        array->aux = NULL;
-        goto push;
-    }
-
-    if (unlikely(array->len >= array->cap)) {
-        array->cap += ((array->cap >> 1) > 0) ? (array->cap >> 1) : 1;
-        array       = realloc(array, sizeof(Julie_Array) + (array->cap * sizeof(void*)));
-    }
-
-push:;
-    JULIE_ASSERT(idx <= array->cap);
-
-    memmove(array->data + idx + 1, array->data + idx, (array->len - idx) * sizeof(void*));
-
-    array->data[idx] = item;
-    array->len += 1;
-
-    return array;
-}
-
-static void *julie_array_elem(Julie_Array *array, unsigned idx) {
-    JULIE_ASSERT(array != NULL && idx < array->len);
-    return array->data[idx];
-}
-
-static void *julie_array_top(Julie_Array *array) {
-    if (array == NULL || array->len == 0) {
-        return NULL;
-    }
-
-    return array->data[array->len - 1];
-}
-
-static void *julie_array_pop(Julie_Array *array) {
-    void *r;
-
-    r = NULL;
-
-    if (array != NULL && array->len > 0) {
-        r = julie_array_top(array);
-        array->len -= 1;
-    }
-
-    return r;
-}
-
-static void julie_array_erase(Julie_Array *array, unsigned idx) {
-    if (array == NULL || idx >= array->len) {
-        return;
-    }
-
-    memmove(array->data + idx, array->data + idx + 1, (array->len - idx - 1) * sizeof(void*));
-
-    array->len -= 1;
-}
-
-#define JULIE_ARRAY_RESERVE(_arrayp, _cap)       ((_arrayp) = julie_array_reserve((_arrayp), (_cap)))
-#define JULIE_ARRAY_PUSH(_arrayp, _item)         ((_arrayp) = julie_array_push((_arrayp), (_item)))
-#define JULIE_ARRAY_INSERT(_arrayp, _item, _idx) ((_arrayp) = julie_array_insert((_arrayp), (_item), (_idx)))
-#define JULIE_ARRAY_SET_AUX(_arrayp, _aux)       ((_arrayp) = julie_array_set_aux((_arrayp), (_aux)))
-
-#define ARRAY_FOR_EACH(_arrayp, _it)                                                                 \
-    for (unsigned long long _each_i = 0;                                                             \
-         ((_arrayp) != NULL && _each_i < (_arrayp)->len && (((_it) = (_arrayp)->data[_each_i]), 1)); \
-         _each_i += 1)
-
-
-
-/*********************************************************
- *                         Core                          *
- *********************************************************/
-
-
 
 #define _JULIE_STATUS_X(e, s) s,
 const char *_julie_error_strings[] = { _JULIE_STATUS };
@@ -1346,54 +1398,6 @@ const char *_julie_type_strings[] = { _JULIE_TYPE };
 const char *julie_type_string(Julie_Type type) {
     return _julie_type_strings[type];
 }
-
-enum {
-    JULIE_STRING_TYPE_EMBED = 0,
-    JULIE_STRING_TYPE_INTERN,
-    JULIE_STRING_TYPE_MALLOC,
-
-    JULIE_INFIX_FN,
-    JULIE_REARRANGED_INFIX_SOURCE_LIST,
-};
-
-#define JULIE_MAX_BC_POT (32ull)
-#define JULIE_EMBEDDED_STRING_MAX_SIZE (sizeof(unsigned long long))
-
-struct Julie_Value_Struct {
-    union {
-        struct {
-            union {
-                long long           sint;
-                unsigned long long  uint;
-                double              floating;
-                Julie_String_ID     string_id;
-                char               *cstring;
-                void               *object;
-                Julie_Array        *list;
-                Julie_Fn            builtin_fn;
-                Julie_Actor        *actor;
-
-                Julie_Value        *free_list_next;
-            };
-
-            unsigned char tag;
-            unsigned char source_node;
-            unsigned char type;
-            unsigned char owned;
-            unsigned int  borrow_count;
-        };
-        struct {
-            /* Last byte of embedded_string_bytes aliases with tag, which should be 0 when
-               tag == JULIE_STRING_TYPE_EMBED, giving us an extra byte and natural NULL
-               terminator. */
-            char          embedded_string_bytes[JULIE_EMBEDDED_STRING_MAX_SIZE + 1];
-            unsigned char _source_node;
-            unsigned char _type;
-            unsigned char _owned;
-            unsigned int  _borrow_count;
-        };
-    };
-};
 
 #define JULIE_BORROW(_val)                                                 \
 do {                                                                       \
@@ -1663,13 +1667,6 @@ enum {
     _JULIE_STRING_NO_TAG,
     JULIE_STRING_AMPERSAND,
     JULIE_STRING_QUOTE,
-};
-
-struct Julie_String_Struct {
-    char               *chars;
-    unsigned long long  len;
-    unsigned long long  hash;
-    unsigned            tag;
 };
 
 #define JULIE_STRING_ID_HASH(_id) (((const Julie_String*)(_id))->hash)
