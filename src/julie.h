@@ -3710,6 +3710,15 @@ void julie_free_error_info(Julie_Error_Info *info) {
         case JULIE_ERR_RELEASE_WHILE_BORROWED:
             FREE_IF_NOT_NULL(info->release_while_borrowed.sym);
             break;
+        case JULIE_ERR_REF_OF_TRANSIENT:
+            FREE_IF_NOT_NULL(info->ref_of_transient.sym);
+            break;
+        case JULIE_ERR_REF_OF_OBJECT_KEY:
+            FREE_IF_NOT_NULL(info->ref_of_object_key.sym);
+            break;
+        case JULIE_ERR_NOT_LVAL:
+            FREE_IF_NOT_NULL(info->not_lval.sym);
+            break;
         case JULIE_ERR_MODIFY_WHILE_ITER:
             FREE_IF_NOT_NULL(info->modify_while_iter.sym);
             break;
