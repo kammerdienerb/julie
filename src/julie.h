@@ -251,6 +251,7 @@ void julie_free(Julie_Interp *interp);
 
 
 
+char *julie_get_pretty_error_string(Julie_Error_Info *info, const char *blue, const char *red, const char *normal);
 void julie_free_error_info(Julie_Error_Info *info);
 void julie_make_parse_error(Julie_Interp *interp, unsigned long long line, unsigned long long col, Julie_Status status);
 void julie_make_interp_error(Julie_Interp *interp, Julie_Value *expr, Julie_Status status);
@@ -2013,6 +2014,7 @@ static Julie_Value *julie_detach_value(Julie_Value *value) {
 
 static Julie_Value *_julie_attach_value(Julie_Interp *dst, Julie_Value *detached, int source_node) {
     Julie_Value                  *copy;
+    Julie_Source_Value_Info      *source_info;
     Julie_Value                  *it;
     Julie_Value                  *key;
     Julie_Value                 **val;
@@ -2041,7 +2043,11 @@ static Julie_Value *_julie_attach_value(Julie_Interp *dst, Julie_Value *detached
             ARRAY_FOR_EACH(detached->list, it) {
                 JULIE_ARRAY_PUSH(copy->list, _julie_attach_value(dst, it, source_node));
             }
-            JULIE_ARRAY_SET_AUX(copy->list, detached->list->aux);
+            source_info = julie_get_source_value_info(detached);
+            if (source_info != NULL) {
+                JULIE_ARRAY_PUSH(dst->source_infos, source_info);
+                JULIE_ARRAY_SET_AUX(copy->list, detached->list->aux);
+            }
             julie_array_free(detached->list);
             break;
 
@@ -2508,6 +2514,11 @@ Julie_Value *julie_error_value(Julie_Interp *interp, const char *error_message) 
         JULIE_ARRAY_PUSH(backtrace->list, julie_string_value(interp, buff));
 
         i += 1;
+    }
+
+    if (!interp->actor->is_main) {
+        snprintf(buff, sizeof(buff), "<actor %p>", (void*)interp->actor);
+        JULIE_ARRAY_PUSH(backtrace->list, julie_string_value(interp, buff));
     }
 
     julie_object_insert_field(interp, v, key, backtrace, NULL);
@@ -3579,6 +3590,104 @@ Julie_Value *julie_lookup(Julie_Interp *interp, const Julie_String_ID id) {
 /*********************************************************
  *                         Errors                        *
  *********************************************************/
+
+char *julie_get_pretty_error_string(Julie_Error_Info *info, const char *blue, const char *red, const char *normal) {
+    char *message;
+    int   size;
+    char *s;
+
+    message    = malloc(64);
+    message[0] = 0;
+    size       = 64;
+
+#define P(_fmt, ...)                                                                                              \
+do {                                                                                                              \
+    char *write_to = message + strlen(message);                                                                   \
+    while ((size_t)snprintf(write_to, size - strlen(message), (_fmt), __VA_ARGS__) >= (size - strlen(message))) { \
+        size += 64;                                                                                               \
+        int off = (write_to - message);                                                                           \
+        message = realloc(message, size);                                                                         \
+        write_to = message + off;                                                                                 \
+    }                                                                                                             \
+} while (0)
+
+
+    P("%s%s:%llu:%llu:%s %serror: %s",
+      blue,
+      info->file_id == NULL ? "<?>" : julie_get_cstring(info->file_id),
+      info->line,
+      info->col,
+      normal,
+      red,
+      julie_error_string(info->status));
+
+    switch (info->status) {
+        case JULIE_ERR_LOOKUP:
+            if (info->lookup.sym != NULL) {
+                P(" (%s)", info->lookup.sym);
+            }
+            break;
+        case JULIE_ERR_RELEASE_WHILE_BORROWED:
+            if (info->release_while_borrowed.sym != NULL) {
+                P(" (%s)", info->release_while_borrowed.sym);
+            }
+            break;
+        case JULIE_ERR_REF_OF_TRANSIENT:
+            if (info->ref_of_transient.sym != NULL) {
+                P(" (%s)", info->ref_of_transient.sym);
+            }
+            break;
+        case JULIE_ERR_REF_OF_OBJECT_KEY:
+            if (info->ref_of_object_key.sym != NULL) {
+                P(" (%s)", info->ref_of_object_key.sym);
+            }
+            break;
+        case JULIE_ERR_NOT_LVAL:
+            if (info->not_lval.sym != NULL) {
+                P(" (%s)", info->not_lval.sym);
+            }
+            break;
+        case JULIE_ERR_MODIFY_WHILE_ITER:
+            if (info->modify_while_iter.sym != NULL) {
+                P(" (%s)", info->modify_while_iter.sym);
+            }
+            break;
+        case JULIE_ERR_ARITY:
+            P(" (wanted %s%llu, got %llu)",
+              info->arity.at_least ? "at least " : "",
+              info->arity.wanted_arity,
+              info->arity.got_arity);
+            break;
+        case JULIE_ERR_TYPE:
+            P(" (wanted %s, got %s)",
+              julie_type_string(info->type.wanted_type),
+              julie_type_string(info->type.got_type));
+            break;
+        case JULIE_ERR_BAD_APPLY:
+            P(" (got %s)", julie_type_string(info->bad_application.got_type));
+            break;
+        case JULIE_ERR_BAD_INDEX:
+            s = julie_to_string(info->interp, info->bad_index.bad_index, 0);
+            P(" (index: %s)", s);
+            free(s);
+            break;
+        case JULIE_ERR_FILE_NOT_FOUND:
+        case JULIE_ERR_FILE_IS_DIR:
+        case JULIE_ERR_MMAP_FAILED:
+            P(" (%s)", info->file.path);
+            break;
+        case JULIE_ERR_LOAD_PACKAGE_FAILURE:
+            P(" (%s) %s", info->load_package_failure.path, info->load_package_failure.package_error_message);
+            break;
+        case JULIE_ERR_REGEX:
+            P(" %s", info->regex.regex_error_message);
+            break;
+        default:
+            break;
+    }
+
+    return message;
+}
 
 void julie_free_error_info(Julie_Error_Info *info) {
 
@@ -10992,6 +11101,17 @@ out:;
 }
 
 static void julie_sandbox_error_handler(Julie_Error_Info *info) {
+    char        *s;
+    Julie_Value *error_value;
+
+    if (info->status != JULIE_ERR_ERROR_VALUE) {
+        s = julie_get_pretty_error_string(info, "", "", "");
+        error_value = julie_error_value(info->interp, s);
+        free(s);
+        julie_free_error_info(info);
+        info->status = JULIE_ERR_ERROR_VALUE;
+        info->thrown.error_value = error_value;
+    }
     memcpy(&info->interp->sandbox_error_info, info, sizeof(info->interp->sandbox_error_info));
 }
 
@@ -11164,11 +11284,7 @@ done:;
 
     *out_status = status;
     if (status != JULIE_SUCCESS) {
-        if (status == JULIE_ERR_ERROR_VALUE) {
-            *out_error_value = julie_detach_value(sandbox->sandbox_error_info.thrown.error_value);
-        } else {
-            *out_error_value = julie_detach_value(julie_error_value(sandbox, julie_error_string(status)));
-        }
+        *out_error_value = julie_detach_value(sandbox->sandbox_error_info.thrown.error_value);
     }
 
     return detached;

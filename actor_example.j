@@ -19,7 +19,7 @@ println (actor-join (actor-spawn my-code))           # => 200
         '
             do
                 actor-send @parent "hello"
-                actor-receive
+                (actor-receive)
 
 println (actor-receive)                        # => "hello"
 actor-send @a "world"

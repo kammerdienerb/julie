@@ -61,7 +61,6 @@ int main(int argc, char **argv) {
 
 
 static void on_julie_error(Julie_Error_Info *info) {
-    Julie_Status           status;
     const char            *blue;
     const char            *red;
     const char            *reset;
@@ -73,8 +72,6 @@ static void on_julie_error(Julie_Error_Info *info) {
     Julie_Value           *frame;
     Julie_Value           *message;
 
-    status = info->status;
-
     if (isatty(2)) {
         blue  = "\033[34m";
         red   = "\033[31m";
@@ -83,81 +80,9 @@ static void on_julie_error(Julie_Error_Info *info) {
         blue = red = reset = "";
     }
 
-    fprintf(stderr, "%s%s:%llu:%llu:%s %serror: %s",
-            blue,
-            info->file_id == NULL ? "<?>" : julie_get_cstring(info->file_id),
-            info->line,
-            info->col,
-            reset,
-            red,
-            julie_error_string(status));
-
-    switch (status) {
-        case JULIE_ERR_LOOKUP:
-            if (info->lookup.sym != NULL) {
-                fprintf(stderr, " (%s)", info->lookup.sym);
-            }
-            break;
-        case JULIE_ERR_RELEASE_WHILE_BORROWED:
-            if (info->release_while_borrowed.sym != NULL) {
-                fprintf(stderr, " (%s)", info->release_while_borrowed.sym);
-            }
-            break;
-        case JULIE_ERR_REF_OF_TRANSIENT:
-            if (info->ref_of_transient.sym != NULL) {
-                fprintf(stderr, " (%s)", info->ref_of_transient.sym);
-            }
-            break;
-        case JULIE_ERR_REF_OF_OBJECT_KEY:
-            if (info->ref_of_object_key.sym != NULL) {
-                fprintf(stderr, " (%s)", info->ref_of_object_key.sym);
-            }
-            break;
-        case JULIE_ERR_NOT_LVAL:
-            if (info->not_lval.sym != NULL) {
-                fprintf(stderr, " (%s)", info->not_lval.sym);
-            }
-            break;
-        case JULIE_ERR_MODIFY_WHILE_ITER:
-            if (info->modify_while_iter.sym != NULL) {
-                fprintf(stderr, " (%s)", info->modify_while_iter.sym);
-            }
-            break;
-        case JULIE_ERR_ARITY:
-            fprintf(stderr, " (wanted %s%llu, got %llu)",
-                    info->arity.at_least ? "at least " : "",
-                    info->arity.wanted_arity,
-                    info->arity.got_arity);
-            break;
-        case JULIE_ERR_TYPE:
-            fprintf(stderr, " (wanted %s, got %s)",
-                    julie_type_string(info->type.wanted_type),
-                    julie_type_string(info->type.got_type));
-            break;
-        case JULIE_ERR_BAD_APPLY:
-            fprintf(stderr, " (got %s)", julie_type_string(info->bad_application.got_type));
-            break;
-        case JULIE_ERR_BAD_INDEX:
-            s = julie_to_string(info->interp, info->bad_index.bad_index, 0);
-            fprintf(stderr, " (index: %s)", s);
-            free(s);
-            break;
-        case JULIE_ERR_FILE_NOT_FOUND:
-        case JULIE_ERR_FILE_IS_DIR:
-        case JULIE_ERR_MMAP_FAILED:
-            fprintf(stderr, " (%s)", info->file.path);
-            break;
-        case JULIE_ERR_LOAD_PACKAGE_FAILURE:
-            fprintf(stderr, " (%s) %s", info->load_package_failure.path, info->load_package_failure.package_error_message);
-            break;
-        case JULIE_ERR_REGEX:
-            fprintf(stderr, " %s", info->regex.regex_error_message);
-            break;
-        default:
-            break;
-    }
-
-    fprintf(stderr, "%s\n", reset);
+    s = julie_get_pretty_error_string(info, blue, red, reset);
+    fprintf(stderr, "%s\n", s);
+    free(s);
 
     i = 0;
     while ((it = julie_bt_entry(info->interp, i)) != NULL) {
