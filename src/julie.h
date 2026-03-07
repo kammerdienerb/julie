@@ -11691,8 +11691,6 @@ static Julie_Status julie_builtin_actor_spawn(Julie_Interp *interp, Julie_Value 
 
     actor->output_callback = interp->output_callback;
 
-    julie_mailbox_init(&actor->mailbox);
-
     actor->detached_expr = julie_detach_value(code);
 
     actor->bindings = dbindings;
