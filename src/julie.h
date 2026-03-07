@@ -375,7 +375,7 @@ static inline Julie_Array *julie_array_reserve(Julie_Array *array, unsigned long
     }
 
     if (array == NULL) {
-        array = malloc(sizeof(Julie_Array) + (cap * sizeof(void*)));
+        array = (Julie_Array*)malloc(sizeof(Julie_Array) + (cap * sizeof(void*)));
         array->len = 0;
         array->cap = cap;
         array->aux = NULL;
@@ -385,14 +385,14 @@ static inline Julie_Array *julie_array_reserve(Julie_Array *array, unsigned long
     if (array->cap >= cap) { return array; }
 
     array->cap = cap;
-    array      = realloc(array, sizeof(Julie_Array) + (array->cap * sizeof(void*)));
+    array      = (Julie_Array*)realloc(array, sizeof(Julie_Array) + (array->cap * sizeof(void*)));
 
     return array;
 }
 
 static inline Julie_Array *julie_array_set_aux(Julie_Array *array, void *aux) {
     if (array == NULL) {
-        array = malloc(sizeof(Julie_Array) + (JULIE_ARRAY_INITIAL_CAP * sizeof(void*)));
+        array = (Julie_Array*)malloc(sizeof(Julie_Array) + (JULIE_ARRAY_INITIAL_CAP * sizeof(void*)));
         array->len = 0;
         array->cap = JULIE_ARRAY_INITIAL_CAP;
     }
@@ -406,7 +406,7 @@ static inline void *julie_array_get_aux(Julie_Array *array) {
 
 static inline Julie_Array *julie_array_push(Julie_Array *array, void *item) {
     if (unlikely(array == NULL)) {
-        array = malloc(sizeof(Julie_Array) + (JULIE_ARRAY_INITIAL_CAP * sizeof(void*)));
+        array = (Julie_Array*)malloc(sizeof(Julie_Array) + (JULIE_ARRAY_INITIAL_CAP * sizeof(void*)));
         array->len = 0;
         array->cap = JULIE_ARRAY_INITIAL_CAP;
         array->aux = NULL;
@@ -415,7 +415,7 @@ static inline Julie_Array *julie_array_push(Julie_Array *array, void *item) {
 
     if (unlikely(array->len >= array->cap)) {
         array->cap += ((array->cap >> 1) > 0) ? (array->cap >> 1) : 1;
-        array       = realloc(array, sizeof(Julie_Array) + (array->cap * sizeof(void*)));
+        array       = (Julie_Array*)realloc(array, sizeof(Julie_Array) + (array->cap * sizeof(void*)));
     }
 
 push:;
@@ -427,7 +427,7 @@ push:;
 
 static inline Julie_Array *julie_array_insert(Julie_Array *array, void *item, unsigned long long idx) {
     if (unlikely(array == NULL)) {
-        array = malloc(sizeof(Julie_Array) + (JULIE_ARRAY_INITIAL_CAP * sizeof(void*)));
+        array = (Julie_Array*)malloc(sizeof(Julie_Array) + (JULIE_ARRAY_INITIAL_CAP * sizeof(void*)));
         array->len = 0;
         array->cap = JULIE_ARRAY_INITIAL_CAP;
         array->aux = NULL;
@@ -436,7 +436,7 @@ static inline Julie_Array *julie_array_insert(Julie_Array *array, void *item, un
 
     if (unlikely(array->len >= array->cap)) {
         array->cap += ((array->cap >> 1) > 0) ? (array->cap >> 1) : 1;
-        array       = realloc(array, sizeof(Julie_Array) + (array->cap * sizeof(void*)));
+        array       = (Julie_Array*)realloc(array, sizeof(Julie_Array) + (array->cap * sizeof(void*)));
     }
 
 push:;
