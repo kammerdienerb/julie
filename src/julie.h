@@ -3907,7 +3907,7 @@ void julie_make_load_package_error(Julie_Interp *interp, Julie_Value *expr, Juli
     info.status                = status;
 
     info.load_package_failure.path = strdup(path);
-    info.load_package_failure.package_error_message = message == NULL ? "unknown error" : strdup(message);
+    info.load_package_failure.package_error_message = message == NULL ? strdup("unknown error") : strdup(message);
 
     JULIE_ARRAY_PUSH(interp->value_stack, expr);
     julie_error(interp, &info);
