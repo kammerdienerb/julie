@@ -1,10 +1,19 @@
 @a =
     actor-spawn
         '
-            while 1
-                println "hello, from the actor"
-                sleep 0.1
+            do
+                while (do (msg = (actor-receive)) (msg != "stop"))
+                    printf "actor: got %\n" msg
+                (error "ahhh")
 
-sleep 1.0
-@a = 123
-sleep 5.0
+repeat i 5
+    actor-send @a i
+    sleep 0.5
+
+actor-send @a "stop"
+
+do-join =
+    fn ()
+        actor-join @a
+
+(do-join)
