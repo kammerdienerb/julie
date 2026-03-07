@@ -111,11 +111,14 @@ struct Julie_Backtrace_Entry_Struct {
 };
 
 typedef struct Julie_Source_Value_Info_Struct {
-    char               *file_name;
-    unsigned long long  line;
-    unsigned long long  col;
-    unsigned long long  ind;
-    int                 paren;
+    union {
+        char            *file_name; /* when on a detached value */
+        Julie_String_ID  file_id;
+    };
+    unsigned long long   line;
+    unsigned long long   col;
+    unsigned long long   ind;
+    int                  paren;
 } Julie_Source_Value_Info;
 
 typedef struct Julie_Backtrace_Entry_Struct Julie_Backtrace_Entry;
@@ -1598,11 +1601,11 @@ static void julie_del_value(Julie_Interp *interp, Julie_Value *value) {
     interp->value_free_list = value;
 }
 
-// #define JULIE_NEW(_interp)         (julie_new_value((_interp)))
-// #define JULIE_DEL(_interp, _value) (julie_del_value((_interp), (_value)))
+#define JULIE_NEW(_interp)         (julie_new_value((_interp)))
+#define JULIE_DEL(_interp, _value) (julie_del_value((_interp), (_value)))
 
-#define JULIE_NEW(_interp)         (malloc(sizeof(Julie_Value)))
-#define JULIE_DEL(_interp, _value) (free((_value)))
+// #define JULIE_NEW(_interp)         (malloc(sizeof(Julie_Value)))
+// #define JULIE_DEL(_interp, _value) (free((_value)))
 
 
 static Julie_Apply_Context *julie_push_cxt(Julie_Interp *interp, Julie_Value *value) {
@@ -1956,7 +1959,7 @@ static Julie_Value *julie_detach_value(Julie_Value *value) {
             if (source_info != NULL) {
                 new_source_info = malloc(sizeof(*new_source_info));
                 memcpy(new_source_info, source_info, sizeof(*new_source_info));
-                new_source_info->file_name = strdup(source_info->file_name);
+                new_source_info->file_name = strdup(julie_get_cstring(source_info->file_id));
                 JULIE_ARRAY_SET_AUX(copy->list, (void*)(((unsigned long long)new_source_info) | 1ull));
             }
 
@@ -2015,6 +2018,7 @@ static Julie_Value *julie_detach_value(Julie_Value *value) {
 static Julie_Value *_julie_attach_value(Julie_Interp *dst, Julie_Value *detached, int source_node) {
     Julie_Value                  *copy;
     Julie_Source_Value_Info      *source_info;
+    char                         *file_name;
     Julie_Value                  *it;
     Julie_Value                  *key;
     Julie_Value                 **val;
@@ -2045,6 +2049,9 @@ static Julie_Value *_julie_attach_value(Julie_Interp *dst, Julie_Value *detached
             }
             source_info = julie_get_source_value_info(detached);
             if (source_info != NULL) {
+                file_name = source_info->file_name;
+                source_info->file_id = julie_get_string_id(dst, file_name);
+                free(file_name);
                 JULIE_ARRAY_PUSH(dst->source_infos, source_info);
                 JULIE_ARRAY_SET_AUX(copy->list, detached->list->aux);
             }
@@ -3737,7 +3744,7 @@ static void julie_error(Julie_Interp *interp, Julie_Error_Info *info) {
 
     source_info = julie_get_top_source_value_info(interp);
     if (source_info != NULL) {
-        info->file_id = julie_get_string_id(interp, source_info->file_name);
+        info->file_id = source_info->file_id;
         info->line    = source_info->line;
         info->col     = source_info->col;
     } else {
@@ -4116,11 +4123,11 @@ static Julie_Value *julie_push_list(Julie_Parse_Context *cxt) {
     JULIE_ARRAY_PUSH(cxt->parse_stack, value);
 
     info = malloc(sizeof(*info));
-    info->file_name = strdup(julie_get_cstring(interp->cur_file_id));
-    info->ind       = cxt->ind;
-    info->line      = cxt->line;
-    info->col       = cxt->col;
-    info->paren     = 0;
+    info->file_id = interp->cur_file_id;
+    info->ind     = cxt->ind;
+    info->line    = cxt->line;
+    info->col     = cxt->col;
+    info->paren   = 0;
 
     JULIE_ARRAY_SET_AUX(value->list, (void*)((unsigned long long)info | 1ull));
     JULIE_ARRAY_PUSH(cxt->interp->source_infos, info);
@@ -12468,7 +12475,7 @@ static Julie_Status julie_apply(Julie_Interp *interp, Julie_Value *list, Julie_V
     if (likely(source_info != NULL)
     ||  (source_info = julie_get_top_source_value_info(interp)) != NULL) {
 
-        cxt->bt_entry.file_id = julie_get_string_id(interp, source_info->file_name);
+        cxt->bt_entry.file_id = source_info->file_id;
         cxt->bt_entry.line    = source_info->line;
         cxt->bt_entry.col     = source_info->col;
     } else {
@@ -13143,7 +13150,6 @@ void julie_free(Julie_Interp *interp) {
     julie_array_free(interp->value_stack);
 
     ARRAY_FOR_EACH(interp->source_infos, info) {
-        free(info->file_name);
         free(info);
     }
     julie_array_free(interp->source_infos);

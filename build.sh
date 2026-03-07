@@ -8,8 +8,8 @@ if which pcre2-config > /dev/null && ! [[ $(pcre2-config --version) < "10.36" ]]
 fi
 
 # ASAN="-fsanitize=address"
-CFLAGS="-Isrc -rdynamic -Wall -pedantic -Wextra -Werror -Wno-unused-function -Wno-unused-parameter -g -O0 ${ASAN} ${PCRE2_CFLAGS}"
-# CFLAGS="-Isrc -rdynamic -O3 -march=native -mtune=native -g -DJULIE_ASSERTIONS=0 ${PCRE2_CFLAGS}"
+# CFLAGS="-Isrc -rdynamic -Wall -pedantic -Wextra -Werror -Wno-unused-function -Wno-unused-parameter -g -O0 ${ASAN} ${PCRE2_CFLAGS}"
+CFLAGS="-Isrc -rdynamic -O3 -march=native -mtune=native -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -g -DJULIE_ASSERTIONS=0 ${PCRE2_CFLAGS}"
 LDFLAGS="-ldl -lm -lpthread ${PCRE2_LDFLAGS}"
 
 echo "CC julie"
