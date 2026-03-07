@@ -52,7 +52,7 @@ int main(int argc, char **argv) {
         free(exe_path);
     }
 
-    julie_parse(interp, code, strlen(code));
+    julie_parse(interp, code, code_size);
     julie_interp(interp);
     julie_free(interp);
 
