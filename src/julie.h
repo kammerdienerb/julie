@@ -11622,7 +11622,7 @@ static void *julie_actor_thread_entry(void *arg) {
     actor->bindings = JULIE_ARRAY_INIT;
 
     if (actor->parent != NULL) {
-        parent_id     = julie_get_string_id(interp, "@parent");
+        parent_id     = julie_get_string_id(interp, "parent-actor");
         parent_handle = julie_actor_value(interp, actor->parent);
         julie_bind(interp, parent_id, &parent_handle);
     }

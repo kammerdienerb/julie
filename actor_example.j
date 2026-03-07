@@ -18,7 +18,7 @@ println (actor-join (actor-spawn my-code))           # => 200
     actor-spawn
         '
             do
-                actor-send @parent "hello"
+                actor-send parent-actor "hello"
                 (actor-receive)
 
 println (actor-receive)                        # => "hello"
@@ -86,7 +86,7 @@ println (actor-join (actor-spawn (' (greet "world") )))  # => "Hello, world!"
                 while (do (msg = (actor-receive)) (msg != "stop"))
                     match msg
                         "get"
-                            actor-send @parent x
+                            actor-send parent-actor x
                         "inc"
                             x += 1
                 x
