@@ -14,7 +14,7 @@ my-code = (' (double 100) )
 println (actor-join (actor-spawn my-code))           # => 200
 
 # --- Messaging ---
-@a =
+a =
     actor-spawn
         '
             do
@@ -22,18 +22,18 @@ println (actor-join (actor-spawn my-code))           # => 200
                 (actor-receive)
 
 println (actor-receive)                        # => "hello"
-actor-send @a "world"
-println (actor-join @a)                         # => "world"
+actor-send a "world"
+println (actor-join a)                         # => "world"
 
 # --- Actor failure => error value ---
-@a = (actor-spawn (' (bad-symbol) ))
-result = (actor-join @a)
+a = (actor-spawn (' (bad-symbol) ))
+result = (actor-join a)
 println (typeof result)                  # => "error"
 
 # --- Send to dead actor => error value ---
-@a = (actor-spawn (' (42) ))
-actor-join @a
-println (typeof (actor-send @a "late"))         # => "error"
+a = (actor-spawn (' (42) ))
+actor-join a
+println (typeof (actor-send a "late"))         # => "error"
 
 code = (' (1 + 2) )
 println (code)                           # => 3
@@ -57,19 +57,19 @@ println
 
 # --- Spawn with config: blacklist + bindings ---
 secret = "hidden"
-@a =
+a =
     actor-spawn (' (secret) )
         object
             'blacklist : (list "secret")
-println (typeof (actor-join @a))                # => "error"
+println (typeof (actor-join a))                # => "error"
 
-@a =
+a =
     actor-spawn (' (extra) )
         object
             'bindings :
                 object
                     "extra" : 99
-println (actor-join @a)                         # => 99
+println (actor-join a)                         # => 99
 
 # --- Shared functions ---
 greet =
@@ -78,7 +78,7 @@ greet =
 println (actor-join (actor-spawn (' (greet "world") )))  # => "Hello, world!"
 
 # --- Counter actor ---
-@a =
+a =
     actor-spawn
         '
             do
@@ -91,9 +91,9 @@ println (actor-join (actor-spawn (' (greet "world") )))  # => "Hello, world!"
                             x += 1
                 x
 
-actor-send @a "inc"
-actor-send @a "inc"
-actor-send @a "get"
+actor-send a "inc"
+actor-send a "inc"
+actor-send a "get"
 println (actor-receive)                        # => 2
-actor-send @a "stop"
-println (actor-join @a)                         # => 2
+actor-send a "stop"
+println (actor-join a)                         # => 2

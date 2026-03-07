@@ -1,8 +1,8 @@
 do-join =
     fn ()
-        (actor-join @a)
+        (actor-join a)
 
-@a =
+a =
     actor-spawn
         '
             do
@@ -11,8 +11,8 @@ do-join =
                 error "ahhh"
 
 repeat i 5
-    actor-send @a i
+    actor-send a i
     sleep 0.5
 
-actor-send @a "stop"
+actor-send a "stop"
 (do-join)
