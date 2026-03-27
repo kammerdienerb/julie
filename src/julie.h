@@ -12402,6 +12402,11 @@ static Julie_Status _julie_invoke_with_cxt(Julie_Interp *interp, Julie_Apply_Con
                     julie_make_bind_error(interp, values[i], status, id);
                     goto cleanup;
                 }
+
+                if ((unsigned long long)arg_vals[i] & 0x1) {
+                    arg_vals[i] = (void*)((unsigned long long)ev | 0x1);
+                    ev->owned = 1;
+                }
             }
 
             n_exprs = julie_array_len(fn->list) - !no_param_lambda;
@@ -12453,7 +12458,9 @@ cleanup:;
 
                 if (transient_to_ref) {
                     ev->owned = 0;
-                    julie_force_free_value(interp, ev);
+                    if (status != JULIE_SUCCESS || *result != ev) {
+                        julie_force_free_value(interp, ev);
+                    }
                 }
             }
 
